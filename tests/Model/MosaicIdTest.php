@@ -36,7 +36,12 @@ final class MosaicIdTest extends TestCase
         $this->assertSame($expectedHex, bin2hex($m->serialize()), 'serialize should be correct LE 8B');
 
         // fromBinary → __toString の往復
-        $m2 = MosaicId::fromBinary(hex2bin($expectedHex));
+        $bin = hex2bin($expectedHex);
+        if ($bin === false) {
+            $this->fail('invalid hex for expected LE bytes in test');
+        }
+        /** @var string $bin */
+        $m2 = MosaicId::fromBinary($bin);
         $this->assertSame((string)$m, (string)$m2);
     }
 

@@ -2,7 +2,10 @@
   "name": "symbol-catbuffer-php-sdk-tools",
   "private": true,
   "scripts": {
-    "gen:mosaic-id": "ts-node tools/promptgen.ts prompts/model-mosaic-id.prompt.md namespace=SymbolSdk\\\\Model class_name=MosaicId"
+    "gen:mosaic-id": "ts-node tools/promptgen.ts prompts/model-mosaic-id.prompt.md namespace=SymbolSdk\\\\Model class_name=MosaicId",
+    "gen:io:reader": "ts-node tools/promptgen.ts prompts/io-binary-reader.prompt.md namespace=SymbolSdk\\\\Io class_name=BinaryReader",
+    "gen:io:writer": "ts-node tools/promptgen.ts prompts/io-binary-writer.prompt.md namespace=SymbolSdk\\\\Io class_name=BinaryWriter",
+    "gen:io": "npm run gen:io:reader && npm run gen:io:writer"
   },
   "devDependencies": {
     "@types/mustache": "^4.2.6",

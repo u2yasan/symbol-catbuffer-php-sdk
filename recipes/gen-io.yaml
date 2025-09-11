@@ -1,0 +1,10 @@
+name: gen-io
+steps:
+  - prompt: prompts/io-binary-reader.prompt.md
+    vars:
+      namespace: "SymbolSdk\\Io"
+      class_name: "BinaryReader"
+  - prompt: prompts/io-binary-writer.prompt.md
+    vars:
+      namespace: "SymbolSdk\\Io"
+      class_name: "BinaryWriter"
