@@ -3,34 +3,23 @@ declare(strict_types=1);
 namespace SymbolSdk\Io;
 
 /**
- * Symbol Catbuffer writer (Little Endian).
- * 
- * - Immutable public API
- * - Implements: buffer/size, U8/U16/U32/U64_LE, bytes, var bytes, vector
+ * Catbuffer準拠のバイナリ書き込み器（Little Endian、length-prefixed vector/bytes対応、イミュータブルAPI）。
+ * @final
  */
 final class BinaryWriter
 {
     /**
      * @var string
      */
-    private string $buffer;
+    private string $buffer = '';
 
     /**
-     * @var int Append offset (number of written bytes)
+     * @var int
      */
-    private int $offset;
+    private int $offset = 0;
 
     /**
-     * Constructor. Initializes empty buffer.
-     */
-    public function __construct()
-    {
-        $this->buffer = '';
-        $this->offset = 0;
-    }
-
-    /**
-     * Returns completed buffer.
+     * Catbuffer：バッファ全体を返す
      * @return string
      */
     public function buffer(): string
@@ -39,7 +28,7 @@ final class BinaryWriter
     }
 
     /**
-     * Returns buffer size in bytes.
+     * Catbuffer：バッファの現在サイズ（バイト数）
      * @return int
      */
     public function size(): int
@@ -48,137 +37,142 @@ final class BinaryWriter
     }
 
     /**
-     * Writes 1 byte unsigned integer (uint8).
-     * Catbuffer: U8 (1 byte)
-     * @param int $v 0..255
+     * Catbuffer (U8)：1バイトを書き込む
+     * @param int $v 0〜255
      */
     public function writeU8(int $v): void
     {
         if ($v < 0 || $v > 0xFF) {
-            throw new \InvalidArgumentException('U8 must be 0..255');
+            throw new \InvalidArgumentException('U8 value out of range: ' . $v);
         }
         $this->buffer .= chr($v);
         $this->offset += 1;
     }
 
     /**
-     * Writes 2 bytes unsigned integer LE (uint16).
-     * Catbuffer: U16 (2 bytes, little endian)
-     * @param int $v 0..65535
+     * Catbuffer (U16LE)：2バイトを書き込む
+     * @param int $v 0〜65535
      */
     public function writeU16LE(int $v): void
     {
         if ($v < 0 || $v > 0xFFFF) {
-            throw new \InvalidArgumentException('U16 must be 0..65535');
+            throw new \InvalidArgumentException('U16 value out of range: ' . $v);
         }
-        $s = chr($v & 0xFF) . chr(($v >> 8) & 0xFF);
-        $this->buffer .= $s;
+        $this->buffer .= chr($v & 0xFF) . chr(($v >> 8) & 0xFF);
         $this->offset += 2;
     }
 
     /**
-     * Writes 4 bytes unsigned integer LE (uint32).
-     * Catbuffer: U32 (4 bytes, little endian)
-     * @param int $v 0..4294967295
+     * Catbuffer (U32LE)：4バイトを書き込む
+     * @param int $v 0〜4294967295
      */
     public function writeU32LE(int $v): void
     {
         if ($v < 0 || $v > 0xFFFFFFFF) {
-            throw new \InvalidArgumentException('U32 must be 0..4294967295');
+            throw new \InvalidArgumentException('U32 value out of range: ' . $v);
         }
-        $s = chr($v & 0xFF)
+        $this->buffer .= chr($v & 0xFF)
             . chr(($v >> 8) & 0xFF)
             . chr(($v >> 16) & 0xFF)
             . chr(($v >> 24) & 0xFF);
-        $this->buffer .= $s;
         $this->offset += 4;
     }
 
     /**
-     * Writes 8 bytes unsigned integer LE, from decimal string.
-     * Catbuffer: U64 (8 bytes, little endian)
-     * @param string $decimal Decimal string, 0..18446744073709551615
+     * Catbuffer (U64LE)：10進文字列を8バイトのリトルエンディアンに変換し書き込む
+     * @param string $decimal U64範囲(0〜18446744073709551615)の10進文字列
      */
     public function writeU64LEDec(string $decimal): void
     {
-        if (!preg_match('/^[0-9]+$/', $decimal)) {
-            throw new \InvalidArgumentException('U64 must be a decimal string');
-        }
-        // min: 0, max: 18446744073709551615 (2^64-1)
-        $max = '18446744073709551615';
-        if (strlen($decimal) > strlen($max) || (strlen($decimal) === strlen($max) && strcmp($decimal, $max) > 0)) {
-            throw new \InvalidArgumentException('U64 out of range');
+        // Check decimal string validity with regex (no sign, only digit, no spaces)
+        if (!preg_match('/^(0|[1-9][0-9]*)$/', $decimal)) {
+            throw new \InvalidArgumentException('U64: invalid decimal string');
         }
 
-        $out = [];
-        $value = ltrim($decimal, '0');
-        if ($value === '') {
-            $value = '0';
+        // Max uint64: 18446744073709551615
+        if (strlen($decimal) > 20 ||
+            (strlen($decimal) === 20 && strcmp($decimal, "18446744073709551615") > 0)
+        ) {
+            throw new \InvalidArgumentException('U64 value out of range');
         }
-        // divmod by 256 for 8 times.
-        for ($i = 0; $i < 8; ++$i) {
-            $out[$i] = (int)bcmod($value, '256');
-            $value = bcdiv($value, '256');
+
+        // Convert decimal string to 8-byte LE binary by divmod 256
+        $num = $decimal;
+        $result = [];
+        for ($i = 0; $i < 8; $i++) {
+            $q = '';
+            $carry = 0;
+            $started = false;
+            for ($j = 0, $n = strlen($num); $j < $n; $j++) {
+                $digit = (int) $num[$j];
+                $acc = $carry * 10 + $digit;
+                $div = intdiv($acc, 256);
+                $rem = $acc % 256;
+                if ($started || $div > 0) {
+                    $q .= (string)$div;
+                    $started = true;
+                }
+                $carry = $rem;
+            }
+            $result[] = chr($carry);
+            $num = $q === '' ? '0' : $q;
         }
-        // After 8 times, $value should be zero
-        if (bccomp($value, '0') !== 0) {
-            throw new \InvalidArgumentException('U64 overflow');
+        if ($num !== '0') {
+            throw new \InvalidArgumentException('U64 value out of range');
         }
-        $bytes = '';
-        for ($i = 0; $i < 8; ++$i) {
-            $bytes .= chr($out[$i]);
-        }
+
+        $bytes = implode('', $result);
         $this->buffer .= $bytes;
         $this->offset += 8;
     }
 
     /**
-     * Writes raw bytes to buffer.
-     * Catbuffer: Octet Bytes (N-byte sequence)
+     * Catbuffer：任意のバイト列を書き込む
      * @param string $bytes
      */
     public function writeBytes(string $bytes): void
     {
-        if ($bytes === '') {
+        $len = strlen($bytes);
+        if ($len === 0) {
             return;
         }
-        $len = strlen($bytes);
         $this->buffer .= $bytes;
         $this->offset += $len;
     }
 
     /**
-     * Writes var length bytes with U32LE length prefix.
-     * Catbuffer: byte array with length (U32LE | bytes)
+     * Catbuffer：先頭にU32LE長を付与した bytes を書き込む
      * @param string $bytes
      */
     public function writeVarBytesWithLenLE(string $bytes): void
     {
         $len = strlen($bytes);
-        $this->writeU32LE($len);
-        if ($len > 0) {
-            $this->buffer .= $bytes;
-            $this->offset += $len;
+        if ($len > 0xFFFFFFFF) {
+            throw new \InvalidArgumentException('VarBytes length exceeds U32 max');
         }
+        $this->writeU32LE($len);
+        $this->writeBytes($bytes);
     }
 
     /**
-     * Writes vector of items (catbuffer array).
-     * Catbuffer: U32LE count + elements
-     * @template T
-     * @param iterable<T> $items
-     * @param callable(T, self): void $elemWriter function($elem, BinaryWriter $writer): void
+     * Catbuffer：可変長vector。各要素への書き込み関数を受ける
+     * @template TValue
+     * @param iterable<TValue> $items
+     * @param callable(TValue, BinaryWriter):void $elemWriter
      */
     public function writeVector(iterable $items, callable $elemWriter): void
     {
-        // For precise count (iterable may not be countable), buffer items then write with length
-        $elems = [];
+        // Collect into array to count and ensure same order as JS/Python SDK
+        $arr = [];
         foreach ($items as $item) {
-            $elems[] = $item;
+            $arr[] = $item;
         }
-        $num = count($elems);
-        $this->writeU32LE($num);
-        foreach ($elems as $item) {
+        $count = count($arr);
+        if ($count > 0xFFFFFFFF) {
+            throw new \InvalidArgumentException('Vector length exceeds U32 max');
+        }
+        $this->writeU32LE($count);
+        foreach ($arr as $item) {
             $elemWriter($item, $this);
         }
     }
