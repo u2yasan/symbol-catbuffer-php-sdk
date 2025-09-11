@@ -4,13 +4,23 @@ declare(strict_types=1);
 namespace SymbolSdk\Transaction;
 
 /**
- * TransferTransaction (ヘッダ+ボディ形式のHEX対応)
- * - 入力HEXは 120B ヘッダ + ボディ。ヘッダは保持し serialize() で前置。
- * - body: recipient(24B) / messageSize(u16LE) / mosaicsCount(u16LE) / reserved(u32) / message / mosaics[]
- * - mosaic は (mosaicId u64LE, amount u64LE) を 1要素 16B
+ * TransferTransaction (ヘッダ+ボディ形式のHEXに対応)
+ * - 入力HEXは 128B ヘッダ + ボディ。ヘッダは保持し serialize() で前置してラウンドトリップ一致。
+ * - body:
+ *   recipient(24B)
+ *   messageSize(u16LE)
+ *   mosaicsCount(u8)
+ *   reserved1(u8)
+ *   reserved2(u32)
+ *   mosaics[count] = { mosaicId(u64LE), amount(u64LE) }  // 1要素 16B
+ *   message[messageSize]
+ * - u64 は 10進文字列で保持し、LE8 として直列化/復元。
  */
 final class TransferTransaction
 {
+    private const HEADER_SIZE = 128;
+
+    /** 入力トランザクションの 128B ヘッダを保持（ラウンドトリップ一致用） */
     private string $header;
 
     /** @var list<Mosaic> */
@@ -32,49 +42,61 @@ final class TransferTransaction
     public static function fromBinary(string $binary): self
     {
         $len = strlen($binary);
-        if ($len < 120) {
-            throw new \InvalidArgumentException('Invalid binary size: full transaction expected');
+        if ($len < self::HEADER_SIZE) {
+            throw new \InvalidArgumentException('Invalid binary size: full transaction (>=128B) expected');
         }
-        $header = substr($binary, 0, 120);
-        $offset = 120;
+
+        $header = substr($binary, 0, self::HEADER_SIZE);
+        $offset = self::HEADER_SIZE;
         $remaining = $len - $offset;
 
         // recipient (24B)
-        if ($remaining < 24) throw new \RuntimeException('EOF recipient');
+        if ($remaining < 24) {
+            throw new \RuntimeException('EOF recipient');
+        }
         $recipient = substr($binary, $offset, 24);
-        $offset += 24; $remaining -= 24;
+        $offset += 24;
+        $remaining -= 24;
 
         // messageSize u16 LE
-        if ($remaining < 2) throw new \RuntimeException('EOF messageSize');
+        if ($remaining < 2) {
+            throw new \RuntimeException('EOF messageSize');
+        }
         $u = unpack('vvalue', substr($binary, $offset, 2));
-        if ($u === false) throw new \RuntimeException('unpack messageSize failed');
+        if ($u === false) {
+            throw new \RuntimeException('unpack messageSize failed');
+        }
         /** @var array{value:int} $u */
         $messageSize = $u['value'];
-        $offset += 2; $remaining -= 2;
+        $offset += 2;
+        $remaining -= 2;
 
-        // mosaicsCount u16 LE
-        if ($remaining < 2) throw new \RuntimeException('EOF mosaicsCount');
-        $u = unpack('vvalue', substr($binary, $offset, 2));
-        if ($u === false) throw new \RuntimeException('unpack mosaicsCount failed');
-        /** @var array{value:int} $u */
-        $mosaicsCount = $u['value'];
-        $offset += 2; $remaining -= 2;
-
-        // reserved u32（スキップ）
-        if ($remaining < 4) throw new \RuntimeException('EOF reserved');
-        $offset += 4; $remaining -= 4;
-
-        // message
-        if ($remaining < $messageSize) {
-            throw new \RuntimeException("Unexpected EOF while reading message: need {$messageSize}, have {$remaining}");
+        // mosaicsCount u8
+        if ($remaining < 1) {
+            throw new \RuntimeException('EOF mosaicsCount');
         }
-        $message = substr($binary, $offset, $messageSize);
-        $offset += $messageSize; $remaining -= $messageSize;
+        $mosaicsCount = ord($binary[$offset]);
+        $offset += 1;
+        $remaining -= 1;
+
+        // reserved1 u8（常に0）
+        if ($remaining < 1) {
+            throw new \RuntimeException('EOF reserved1');
+        }
+        $offset += 1;
+        $remaining -= 1;
+
+        // reserved2 u32（常に0）
+        if ($remaining < 4) {
+            throw new \RuntimeException('EOF reserved2');
+        }
+        $offset += 4;
+        $remaining -= 4;
 
         // mosaics
-        $need = $mosaicsCount * 16;
-        if ($remaining < $need) {
-            throw new \RuntimeException("Unexpected EOF while reading mosaics: need {$need}, have {$remaining}");
+        $needForMosaics = $mosaicsCount * 16;
+        if ($remaining < $needForMosaics) {
+            throw new \RuntimeException("Unexpected EOF while reading mosaics: need {$needForMosaics}, have {$remaining}");
         }
         /** @var list<Mosaic> $mosaics */
         $mosaics = [];
@@ -83,6 +105,14 @@ final class TransferTransaction
             $amt = self::readU64LEDecAt($binary, $offset); $offset += 8;
             $mosaics[] = new Mosaic($mid, $amt);
         }
+        $remaining = $len - $offset;
+
+        // message
+        if ($remaining < $messageSize) {
+            throw new \RuntimeException("Unexpected EOF while reading message: need {$messageSize}, have {$remaining}");
+        }
+        $message = $messageSize > 0 ? substr($binary, $offset, $messageSize) : '';
+        $offset += $messageSize;
 
         return new self($recipient, $mosaics, $message, $header);
     }
@@ -90,15 +120,25 @@ final class TransferTransaction
     public function serialize(): string
     {
         $body  = $this->recipient24;
-        $body .= pack('v', strlen($this->message));     // messageSize u16LE
-        $body .= pack('v', count($this->mosaics));      // mosaicsCount u16LE
-        $body .= pack('V', 0);                          // reserved u32
-        $body .= $this->message;
 
+        // messageSize u16LE
+        $body .= pack('v', strlen($this->message));
+
+        // mosaicsCount u8
+        $body .= chr(count($this->mosaics));
+
+        // reserved1 u8, reserved2 u32
+        $body .= chr(0);
+        $body .= pack('V', 0);
+
+        // mosaics
         foreach ($this->mosaics as $m) {
             $body .= self::u64LE($m->mosaicIdDec);
             $body .= self::u64LE($m->amountDec);
         }
+
+        // message
+        $body .= $this->message;
 
         return $this->header . $body;
     }
