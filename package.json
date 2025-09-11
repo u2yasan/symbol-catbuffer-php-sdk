@@ -5,7 +5,13 @@
     "gen:mosaic-id": "ts-node tools/promptgen.ts prompts/model-mosaic-id.prompt.md namespace=SymbolSdk\\\\Model class_name=MosaicId",
     "gen:io:reader": "ts-node tools/promptgen.ts prompts/io-binary-reader.prompt.md namespace=SymbolSdk\\\\Io class_name=BinaryReader",
     "gen:io:writer": "ts-node tools/promptgen.ts prompts/io-binary-writer.prompt.md namespace=SymbolSdk\\\\Io class_name=BinaryWriter",
-    "gen:io": "npm run gen:io:reader && npm run gen:io:writer"
+    "gen:io": "npm run gen:io:reader && npm run gen:io:writer",
+    "gen:tx:transfer": "ts-node tools/promptgen.ts prompts/tx-transfer.prompt.md class_name=TransferTransaction",
+    "gen:tx:mosaicdef": "ts-node tools/promptgen.ts prompts/tx-mosaic-definition.prompt.md class_name=MosaicDefinitionTransaction",
+    "gen:tx:nsreg": "ts-node tools/promptgen.ts prompts/tx-namespace-registration.prompt.md class_name=NamespaceRegistrationTransaction",
+    "gen:tx:keylink": "ts-node tools/promptgen.ts prompts/tx-account-key-link.prompt.md class_name=AccountKeyLinkTransaction",
+    "gen:tx:agg-complete": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md class_name=AggregateCompleteTransaction output_path=src/Transaction/AggregateCompleteTransaction.php",
+    "gen:tx:agg-bonded": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md class_name=AggregateBondedTransaction output_path=src/Transaction/AggregateBondedTransaction.php"
   },
   "devDependencies": {
     "@types/mustache": "^4.2.6",
