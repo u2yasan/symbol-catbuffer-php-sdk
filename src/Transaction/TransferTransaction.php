@@ -3,251 +3,97 @@ declare(strict_types=1);
 
 namespace SymbolSdk\Transaction;
 
-/**
- * TransferTransaction (ヘッダ+ボディ形式のHEXに対応)
- * - 入力HEXは 128B ヘッダ + ボディ。ヘッダは保持し serialize() で前置してラウンドトリップ一致。
- * - body:
- *   recipient(24B)
- *   messageSize(u16LE)
- *   mosaicsCount(u8)
- *   reserved1(u8)
- *   reserved2(u32)
- *   mosaics[count] = { mosaicId(u64LE), amount(u64LE) }  // 1要素 16B
- *   message[messageSize]
- * - u64 は 10進文字列で保持し、LE8 として直列化/復元。
- */
-final class TransferTransaction
+final class TransferTransaction extends AbstractTransaction
 {
-    private const HEADER_SIZE = 128;
-
-    /** 入力トランザクションの 128B ヘッダを保持（ラウンドトリップ一致用） */
-    private string $header;
-
     /** @var list<Mosaic> */
     private array $mosaics;
-
     /**
      * @param list<Mosaic> $mosaics
      */
     public function __construct(
-        public readonly string $recipient24,   // 24 bytes raw
+        public readonly string $recipient24,
         array $mosaics,
-        public readonly string $message,       // raw bytes
-        string $header = ''
+        public readonly string $message,
+        // header fields:
+        string $headerRaw, int $size, int $version, int $network, int $type, string $maxFeeDec, string $deadlineDec
     ) {
+        parent::__construct($headerRaw, $size, $version, $network, $type, $maxFeeDec, $deadlineDec);
+        /** @var list<Mosaic> $mosaics */
         $this->mosaics = $mosaics;
-        $this->header = $header;
     }
 
     public static function fromBinary(string $binary): self
     {
-        $len = strlen($binary);
-        if ($len < self::HEADER_SIZE) {
-            throw new \InvalidArgumentException('Invalid binary size: full transaction (>=128B) expected');
-        }
+        $h = self::parseHeader($binary);
+        $offset = $h['offset']; $len = strlen($binary);
 
-        $header = substr($binary, 0, self::HEADER_SIZE);
-        $offset = self::HEADER_SIZE;
-        $remaining = $len - $offset;
-
-        // recipient (24B)
-        if ($remaining < 24) {
-            throw new \RuntimeException('EOF recipient');
-        }
+        if ($len < $offset + 24) throw new \RuntimeException('EOF recipient');
         $recipient = substr($binary, $offset, 24);
         $offset += 24;
-        $remaining -= 24;
 
-        // messageSize u16 LE
-        if ($remaining < 2) {
-            throw new \RuntimeException('EOF messageSize');
-        }
-        $u = unpack('vvalue', substr($binary, $offset, 2));
-        if ($u === false) {
-            throw new \RuntimeException('unpack messageSize failed');
-        }
-        /** @var array{value:int} $u */
-        $messageSize = $u['value'];
-        $offset += 2;
-        $remaining -= 2;
+        if ($len < $offset + 2) throw new \RuntimeException('EOF messageSize');
+        $messageSize = self::u16At($binary, $offset); $offset += 2;
 
-        // mosaicsCount u8
-        if ($remaining < 1) {
-            throw new \RuntimeException('EOF mosaicsCount');
-        }
-        $mosaicsCount = ord($binary[$offset]);
+        if ($len < $offset + 1) throw new \RuntimeException('EOF mosaicsCount');
+        $mosaicsCount = ord($binary[$offset]); $offset += 1;
+
+        if ($len < $offset + 1) throw new \RuntimeException('EOF reserved1');
         $offset += 1;
-        $remaining -= 1;
 
-        // reserved1 u8（常に0）
-        if ($remaining < 1) {
-            throw new \RuntimeException('EOF reserved1');
-        }
-        $offset += 1;
-        $remaining -= 1;
-
-        // reserved2 u32（常に0）
-        if ($remaining < 4) {
-            throw new \RuntimeException('EOF reserved2');
-        }
+        if ($len < $offset + 4) throw new \RuntimeException('EOF reserved2');
         $offset += 4;
-        $remaining -= 4;
 
-        // mosaics
         $needForMosaics = $mosaicsCount * 16;
-        if ($remaining < $needForMosaics) {
-            throw new \RuntimeException("Unexpected EOF while reading mosaics: need {$needForMosaics}, have {$remaining}");
+        if ($len < $offset + $needForMosaics) {
+            throw new \RuntimeException('EOF mosaics array');
         }
         /** @var list<Mosaic> $mosaics */
         $mosaics = [];
         for ($i = 0; $i < $mosaicsCount; $i++) {
-            $mid = self::readU64LEDecAt($binary, $offset); $offset += 8;
-            $amt = self::readU64LEDecAt($binary, $offset); $offset += 8;
+            $mid = self::u64DecAt($binary, $offset); $offset += 8;
+            $amt = self::u64DecAt($binary, $offset); $offset += 8;
             $mosaics[] = new Mosaic($mid, $amt);
         }
-        $remaining = $len - $offset;
 
-        // message
-        if ($remaining < $messageSize) {
-            throw new \RuntimeException("Unexpected EOF while reading message: need {$messageSize}, have {$remaining}");
+        if ($len < $offset + $messageSize) {
+            throw new \RuntimeException("Unexpected EOF while reading message: need {$messageSize}, have " . ($len - $offset));
         }
         $message = $messageSize > 0 ? substr($binary, $offset, $messageSize) : '';
         $offset += $messageSize;
 
-        return new self($recipient, $mosaics, $message, $header);
+        return new self(
+            $recipient, $mosaics, $message,
+            $h['headerRaw'], $h['size'], $h['version'], $h['network'], $h['type'], $h['maxFeeDec'], $h['deadlineDec']
+        );
     }
 
-    public function serialize(): string
+    protected static function decodeBody(string $binary, int $offset): array
+    {
+        // 未使用（上で実装済）— 他 Tx とインタフェースを合わせるために残すだけ
+        return [];
+    }
+
+    protected function encodeBody(): string
     {
         $body  = $this->recipient24;
-
-        // messageSize u16LE
-        $body .= pack('v', strlen($this->message));
-
-        // mosaicsCount u8
-        $body .= chr(count($this->mosaics));
-
-        // reserved1 u8, reserved2 u32
-        $body .= chr(0);
-        $body .= pack('V', 0);
-
-        // mosaics
+        $body .= pack('v', strlen($this->message));     // u16LE
+        $body .= chr(count($this->mosaics));            // u8
+        $body .= chr(0);                                // reserved1 u8
+        $body .= pack('V', 0);                          // reserved2 u32
         foreach ($this->mosaics as $m) {
             $body .= self::u64LE($m->mosaicIdDec);
             $body .= self::u64LE($m->amountDec);
         }
-
-        // message
         $body .= $this->message;
-
-        return $this->header . $body;
-    }
-
-    // ---------- u64 helpers (decimal-string safe) ----------
-    private static function readU64LEDecAt(string $bin, int $off): string
-    {
-        $dec = '0';
-        for ($i = 7; $i >= 0; $i--) {
-            $dec = self::mulDecBy($dec, 256);
-            $dec = self::addDecSmall($dec, ord($bin[$off + $i]));
-        }
-        return $dec;
-    }
-
-    private static function u64LE(string $dec): string
-    {
-        $max = '18446744073709551615';
-        if (!preg_match('/^[0-9]+$/', $dec) || self::cmpDec($dec, $max) > 0) {
-            throw new \InvalidArgumentException('u64 decimal out of range');
-        }
-        $cur = ltrim($dec, '0');
-        if ($cur === '') return str_repeat("\x00", 8);
-        $bytes = [];
-        for ($i = 0; $i < 8; $i++) {
-            [$q, $r] = self::divmodDecBy($cur, 256);
-            $bytes[] = chr($r);
-            if ($q === '0') {
-                for ($j = $i + 1; $j < 8; $j++) $bytes[] = "\x00";
-                return implode('', $bytes);
-            }
-            $cur = $q;
-        }
-        if ($cur !== '0') throw new \InvalidArgumentException('u64 overflow');
-        return implode('', $bytes);
-    }
-
-    private static function cmpDec(string $a, string $b): int
-    {
-        $a = ltrim($a, '0'); if ($a === '') $a = '0';
-        $b = ltrim($b, '0'); if ($b === '') $b = '0';
-        $la = strlen($a); $lb = strlen($b);
-        if ($la !== $lb) return $la <=> $lb;
-        return strcmp($a, $b) <=> 0;
-    }
-
-    /** @return array{0:string,1:int} */
-    private static function divmodDecBy(string $dec, int $by): array
-    {
-        $len = strlen($dec);
-        $q = '';
-        $carry = 0;
-        for ($i = 0; $i < $len; $i++) {
-            $carry = $carry * 10 + (ord($dec[$i]) - 48);
-            $digit = intdiv((int)$carry, (int)$by);
-            $carry = (int)($carry % $by);
-            if ($q !== '' || $digit !== 0) {
-                $q .= chr($digit + 48);
-            }
-        }
-        if ($q === '') {
-            $q = '0';
-        }
-        return [$q, $carry];
-    }
-
-    private static function mulDecBy(string $dec, int $by): string
-    {
-        if ($dec === '0') {
-            return '0';
-        }
-        $carry = 0;
-        $out = '';
-        for ($i = strlen($dec) - 1; $i >= 0; $i--) {
-            $t = (ord($dec[$i]) - 48) * $by + $carry;
-            $out .= chr(($t % 10) + 48);
-            $carry = intdiv((int)$t, 10);
-        }
-        while ($carry > 0) {
-            $out .= chr(($carry % 10) + 48);
-            $carry = intdiv((int)$carry, 10);
-        }
-        return strrev($out);
-    }
-
-    private static function addDecSmall(string $dec, int $small): string
-    {
-        $i = strlen($dec) - 1;
-        $carry = $small;
-        $out = '';
-        while ($i >= 0 || $carry > 0) {
-            $d = $i >= 0 ? (ord($dec[$i]) - 48) : 0;
-            $t = $d + $carry;
-            $out .= chr(($t % 10) + 48);
-            $carry = intdiv((int)$t, 10);
-            $i--;
-        }
-        $res = ltrim(strrev($out), '0');
-        return $res === '' ? '0' : $res;
+        return $body;
     }
 }
 
-/**
- * Mosaic 値オブジェクト（u64 は 10進文字列）
- */
+/** 値オブジェクト */
 final class Mosaic
 {
     public function __construct(
-        public readonly string $mosaicIdDec, // u64 decimal
-        public readonly string $amountDec    // u64 decimal
+        public readonly string $mosaicIdDec,
+        public readonly string $amountDec
     ) {}
 }
