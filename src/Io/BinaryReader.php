@@ -1,23 +1,26 @@
 <?php
 declare(strict_types=1);
+
 namespace SymbolSdk\Io;
 
+use InvalidArgumentException;
+use RuntimeException;
+
 /**
- * Little Endian, forward-only binary reader for catbuffer compatible streams.
- * Buffer is immutable, offset progresses on each read.
- * All boundary checks throw RuntimeException on overrun.
- * U64 is returned as decimal string ("0"〜"18446744073709551615").
+ * final
+ * バッファのバイナリストリームをリトルエンディアンで読み出すクラス
  */
 final class BinaryReader
 {
-    /** @var string */
+    /** @var string 読み込みバッファ（不変・バイナリ） */
     private readonly string $buffer;
-    /** @var int */
-    private int $offset = 0;
+    /** @var int 現在のバッファオフセット（読み位置） */
+    private int $offset;
 
     /**
-     * @param string $buffer バイナリ列。catbuffer準拠
-     * @throws \InvalidArgumentException
+     * コンストラクタ
+     * @param string $buffer 読み出しバッファ
+     * @throws InvalidArgumentException
      */
     public function __construct(string $buffer)
     {
@@ -26,8 +29,9 @@ final class BinaryReader
     }
 
     /**
-     * 現オフセット（バッファ先頭を0とする、読み取り開始位置）
-     * @return int 0以上バッファ長未満
+     * 現在のオフセットを返す
+     * catbuffer: ストリーム位置
+     * @return int
      */
     public function offset(): int
     {
@@ -35,8 +39,9 @@ final class BinaryReader
     }
 
     /**
-     * 残りバイト数
-     * @return int 0〜
+     * 残り未読バイト数を返す
+     * catbuffer: ストリーム残バイト数
+     * @return int
      */
     public function remaining(): int
     {
@@ -44,87 +49,89 @@ final class BinaryReader
     }
 
     /**
-     * 1バイト（U8, uint8_t, Little Endian）読み出し
-     * @catbuffer type: uint8_t
+     * 次の1バイトを読み、符号なし8ビット整数として返す
+     * catbuffer: u8
      * @return int 0〜255
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
     public function readU8(): int
     {
-        if ($this->remaining() < 1) {
-            throw new \RuntimeException('Insufficient bytes for U8');
-        }
-        $v = \ord($this->buffer[$this->offset]);
+        $this->requireBytes(1);
+        $value = \ord($this->buffer[$this->offset]);
         $this->offset += 1;
-        return $v;
+        return $value;
     }
 
     /**
-     * 2バイト（U16, uint16_t, Little Endian）読み出し
-     * @catbuffer type: uint16_t
+     * 次の2バイトをリトルエンディアンとして読み、符号なし16ビット整数として返す
+     * catbuffer: u16 (LE)
      * @return int 0〜65535
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
     public function readU16LE(): int
     {
-        if ($this->remaining() < 2) {
-            throw new \RuntimeException('Insufficient bytes for U16');
-        }
+        $this->requireBytes(2);
         $b0 = \ord($this->buffer[$this->offset]);
         $b1 = \ord($this->buffer[$this->offset + 1]);
+        $val = ($b1 << 8) | $b0;
         $this->offset += 2;
-        return ($b1 << 8) | $b0;
+        return $val;
     }
 
     /**
-     * 4バイト（U32, uint32_t, Little Endian）読み出し
-     * @catbuffer type: uint32_t
+     * 次の4バイトをリトルエンディアンとして読み、符号なし32ビット整数として返す
+     * catbuffer: u32 (LE)
      * @return int 0〜4294967295
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
     public function readU32LE(): int
     {
-        if ($this->remaining() < 4) {
-            throw new \RuntimeException('Insufficient bytes for U32');
-        }
+        $this->requireBytes(4);
         $b0 = \ord($this->buffer[$this->offset]);
         $b1 = \ord($this->buffer[$this->offset + 1]);
         $b2 = \ord($this->buffer[$this->offset + 2]);
         $b3 = \ord($this->buffer[$this->offset + 3]);
+        $val = ($b3 << 24) | ($b2 << 16) | ($b1 << 8) | $b0;
+        // UINT32 は PHP int で十分表現できる
         $this->offset += 4;
-        return ($b3 << 24) | ($b2 << 16) | ($b1 << 8) | $b0;
+        return $val;
     }
 
     /**
-     * 8バイト（U64, uint64_t, Little Endian）読み出し
-     * @catbuffer type: uint64_t
-     * @return string "0"〜"18446744073709551615" （10進数で可逆文字列）
-     * @throws \RuntimeException
+     * 次の8バイトをリトルエンディアンとして読み、符号なし64ビット整数を10進数文字列で返す
+     * catbuffer: u64 (LE, 10進数）
+     * @return string 例: '12345678901234567890'
+     * @throws RuntimeException
      */
     public function readU64LE(): string
     {
-        if ($this->remaining() < 8) {
-            throw new \RuntimeException('Insufficient bytes for U64');
+        $this->requireBytes(8);
+        $start = $this->offset;
+        // $bytes[0]...$bytes[7]
+        $low = 0;
+        $high = 0;
+        for ($i = 0; $i < 4; ++$i) {
+            $low |= (\ord($this->buffer[$start + $i]) << ($i * 8));
         }
-        $result = '0';
-        $mul = '1';
-        for ($i = 0; $i < 8; ++$i) {
-            $byte = \ord($this->buffer[$this->offset + $i]);
-            if ($byte !== 0) {
-                $add = bcmul((string)$byte, $mul, 0);
-                $result = bcadd($result, $add, 0);
-            }
-            $mul = bcmul($mul, '256', 0);
+        for ($i = 0; $i < 4; ++$i) {
+            $high |= (\ord($this->buffer[$start + 4 + $i]) << ($i * 8));
         }
+        // PHP では UInt64 全域を整数で安全に扱えないため、10進文字列で返す
+        // $value = $high << 32 | $low も溢れるので、文字列で合成
+        // $value = $high * (2 ** 32) + $low
+        $result = \bcadd(
+            \bcmul((string)$high, '4294967296'), // 2^32
+            (string)$low
+        );
         $this->offset += 8;
         return $result;
     }
 
     /**
-     * 8バイト（U64, uint64_t, Little Endian）生bytesで取得
-     * @catbuffer type: uint64_t (bytes)
-     * @return string 8バイトのバイナリ
-     * @throws \RuntimeException
+     * 次の8バイト（LE u64）を生（バイナリ）で返す
+     * catbuffer: u64 bytes (LE)
+     * @return string 8バイト
+     * @throws RuntimeException
      */
     public function readU64LEBytes(): string
     {
@@ -132,30 +139,28 @@ final class BinaryReader
     }
 
     /**
-     * 固定長バイト列を読み出し
-     * @catbuffer type: bytes[固定長]
-     * @param int $length 長さ
-     * @return string 長さ$lengthのバイナリ
-     * @throws \RuntimeException
+     * 指定バイト数を生で返す
+     * catbuffer: bytes[N]
+     * @param int $length
+     * @return string
+     * @throws InvalidArgumentException|RuntimeException
      */
     public function readBytes(int $length): string
     {
         if ($length < 0) {
-            throw new \InvalidArgumentException('Negative length');
+            throw new InvalidArgumentException('Negative length');
         }
-        if ($this->remaining() < $length) {
-            throw new \RuntimeException('Insufficient bytes for readBytes');
-        }
+        $this->requireBytes($length);
         $result = \substr($this->buffer, $this->offset, $length);
         $this->offset += $length;
         return $result;
     }
 
     /**
-     * 可変長（prefix: U32LE長）バイト列の読み出し
-     * @catbuffer type: bytes[U32-prefixed]
-     * @return string 長さprefixのバイナリ
-     * @throws \RuntimeException
+     * 先頭4バイト（U32LE長）付きのバイト列を読む
+     * catbuffer: bytes (len: U32LE)
+     * @return string
+     * @throws RuntimeException
      */
     public function readVarBytesWithLenLE(): string
     {
@@ -164,25 +169,29 @@ final class BinaryReader
     }
 
     /**
-     * ベクタ（個数: 固定長）の要素をリーダ関数で可変個読み出し
-     * @catbuffer type: T[] (数は指定count個)
-     * @param callable $elemReader 1要素を読む: fn(BinaryReader $r): T
-     * @param int $count 個数
-     * @return array<int, mixed> 各要素
-     * @throws \InvalidArgumentException
-     * @throws \RuntimeException
+     * @param int $count
+     * @param callable(int):mixed $reader
+     * @return list<mixed>
      */
-    public function readVector(callable $elemReader, int $count): array
+    public function readVector(int $count, callable $reader): array
     {
-        if ($count < 0) {
-            throw new \InvalidArgumentException('Negative vector count');
+        $out = [];
+        for ($i = 0; $i < $count; $i++) {
+            $out[] = $reader($i);
         }
-        $result = [];
-        for ($i = 0; $i < $count; ++$i) {
-            /** @var mixed $v */
-            $v = $elemReader($this);
-            $result[] = $v;
+        return $out;
+    }
+
+    /**
+     * 残りバイト数が必要量を満たすか確認し、不足時は例外
+     * @param int $length
+     * @return void
+     * @throws RuntimeException
+     */
+    private function requireBytes(int $length): void
+    {
+        if ($this->remaining() < $length) {
+            throw new RuntimeException("BinaryReader: buffer underrun (need $length, remaining {$this->remaining()})");
         }
-        return $result;
     }
 }
