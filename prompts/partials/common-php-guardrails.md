@@ -26,7 +26,7 @@
   /** @var array{value:int} $u */
   $v = $u['value'];
   ```
-  ❌ 禁止: `unpack('V', ...)[1]`
+  ❌ 禁止: `unpack('V', ...)[1]`（array|false の [1] 直アクセスをしない）
 - 読み取り前に **残量チェック**：
   ```php
   $remaining = strlen($bin) - $off;
@@ -36,6 +36,7 @@
 
 ## Uint64（LE8）— 安全な10進文字列で保持
 - 64bit整数は **10進文字列**（`0..18446744073709551615`）で保持。直列化は **LE 8バイト**。
+- **禁止事項**：10進文字列に対して **`/` や `%`** 等の数値演算を使わない（PHPStan: *Binary operation between string and int* を回避）。
 - 実装に含める最小ヘルパ（同クラス内 or 共通化）：
   ```php
   private static function cmpDec(string $a, string $b): int { /* 長さ→辞書順 */ }
@@ -52,7 +53,8 @@
       // divmod で8バイト生成
   }
   ```
-- **同ファイルの値オブジェクト（例：Mosaic）**が u64 を直列化する場合、**他クラスの private を呼ばない**（必要なら同等ヘルパを複製し自己完結）。
+- **LE8 → 10進** は **base-256 の畳み込み**で行う（*dec = dec*256 + byte* を 8回繰り返す）。
+- **同ファイルの値オブジェクト（例：Mosaic/MosaicId）**が u64 を直列化する場合、**他クラスの private を呼ばない**（必要なら同等ヘルパを複製し自己完結）。
 
 ## Arrays & Generics（PHPDocで厳密化）
 - 可変配列は **値型を明示**：
@@ -98,5 +100,6 @@
 - ❌ `unpack('V', ...)[1]` → ✅ `unpack('Vvalue', ...); $u['value']`
 - ❌ `substr(...) === false` → ✅ `strlen($chunk) !== N`
 - ❌ `count($string)` → ✅ `strlen($string)`
-- ❌ readonly 再代入 → ✅ ローカルで整形 → **一度だけ**代入
+- ❌ `readonly` 再代入 → ✅ ローカルで整形 → **一度だけ**代入
+- ❌ 文字列に対する `/`・`%` → ✅ `divmodDecBy()` などの **10進文字列演算**を使う
 - ❌ 未定義の親メソッド呼び出し → ✅ 親前提があるときのみ（指定が無ければ**単体実装**）
