@@ -25,5 +25,10 @@ references:
 catbuffer 定義: {{ references.catbuffer }}
 
 # Output
-- 完成したPHPファイルのみ（<?php から終了まで）
-- ファイルパス: {{output_path}}
+- 完成した **PHPコードのみ** を出力してください。以下を厳守：
+  - 先頭は必ず `<?php` から開始すること（前置きの説明文・空行・BOM・Markdown記法の禁止）。
+  - コードブロックフェンス（```, ```php）や `===FILE ...===` / `===END===` は出力しない。
+  - 後置きの説明や例も一切出力しない（コードのみ）。
+  - ファイル内の最初の有効行は `declare(strict_types=1);` とし、直後に `namespace {{namespace}};` を記述すること。
+  - 先頭や末尾に不要な空白・改行を付けない。
+  - 出力対象は **単一ファイル**、保存先: `{{output_path}}`
