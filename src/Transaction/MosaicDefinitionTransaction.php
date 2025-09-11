@@ -1,123 +1,181 @@
 <?php
 declare(strict_types=1);
+
 namespace SymbolSdk\Transaction;
 
-use InvalidArgumentException;
-use RuntimeException;
-
-final readonly class MosaicDefinitionTransaction
+/**
+ * MosaicDefinitionTransaction (ヘッダ+ボディ形式のHEX対応)
+ * - 入力HEXは 120B ヘッダ + ボディ。ヘッダは保持し serialize() で前置してラウンドトリップ一致。
+ * - u64 は10進文字列で保持し、LE8 として直列化/復元。
+ */
+final class MosaicDefinitionTransaction
 {
-    public const SIZE = 4 + 8 + 1 + 1 + 8;
-    private const FLAG_SUPPLY_MUTABLE    = 0x01;
-    private const FLAG_TRANSFERABLE      = 0x02;
-    private const FLAG_RESTRICTABLE      = 0x04;
-    private const FLAG_REVOKABLE         = 0x08;
+    private string $header;
 
     public function __construct(
-        public int $nonce,
-        public int $mosaicId,
-        public int $flags,
-        public int $divisibility,
-        public int $duration
+        public readonly int $nonce,           // u32
+        public readonly string $mosaicIdDec,  // u64 as decimal-string
+        public readonly int $flags,           // u8
+        public readonly int $divisibility,    // u8
+        public readonly ?string $durationDec, // u64 as decimal-string or null
+        string $header = ''
     ) {
-        if ($nonce < 0 || $nonce > 0xFFFFFFFF) {
-            throw new InvalidArgumentException('Invalid nonce');
-        }
-        if ($mosaicId < 0 || $mosaicId > 0xFFFFFFFFFFFFFFFF) {
-            throw new InvalidArgumentException('Invalid mosaicId');
-        }
-        if ($flags < 0 || $flags > 0xFF) {
-            throw new InvalidArgumentException('Invalid flags');
-        }
-        if ($divisibility < 0 || $divisibility > 0xFF) {
-            throw new InvalidArgumentException('Invalid divisibility');
-        }
-        if ($duration < 0 || $duration > 0xFFFFFFFFFFFFFFFF) {
-            throw new InvalidArgumentException('Invalid duration');
-        }
+        $this->header = $header;
     }
 
     public static function fromBinary(string $binary): self
     {
-        if (strlen($binary) !== self::SIZE) {
-            throw new \InvalidArgumentException('Invalid binary size');
+        $len = strlen($binary);
+        if ($len < 120) {
+            throw new \InvalidArgumentException('Invalid binary size: full transaction expected');
         }
-        $offset = 0;
-        $chunk = substr($binary, $offset, 4);
-        if (strlen($chunk) !== 4) {
-            throw new \RuntimeException('Unexpected EOF while reading nonce (need 4 bytes).');
-        }
-        $u = unpack('Vvalue', $chunk);
-        if ($u === false) {
-            throw new \RuntimeException('unpack failed for nonce.');
-        }
+        $header = substr($binary, 0, 120);
+        $offset = 120;
+        $remaining = $len - $offset;
+
+        // nonce u32 (LE)
+        if ($remaining < 4) throw new \RuntimeException('EOF nonce');
+        $u = unpack('Vvalue', substr($binary, $offset, 4));
+        if ($u === false) throw new \RuntimeException('unpack nonce failed');
+        /** @var array{value:int} $u */
         $nonce = $u['value'];
-        $offset += 4;
-        $chunk = substr($binary, $offset, 8);
-        if (strlen($chunk) !== 8) {
-            throw new \RuntimeException('Unexpected EOF while reading mosaicId (need 8 bytes).');
+        $offset += 4; $remaining -= 4;
+
+        // mosaicId u64 (LE) -> decimal
+        if ($remaining < 8) throw new \RuntimeException('EOF mosaicId');
+        $mosaicIdDec = self::readU64LEDecAt($binary, $offset);
+        $offset += 8; $remaining -= 8;
+
+        // flags u8
+        if ($remaining < 1) throw new \RuntimeException('EOF flags');
+        $flags = ord($binary[$offset]); $offset += 1; $remaining -= 1;
+
+        // divisibility u8
+        if ($remaining < 1) throw new \RuntimeException('EOF divisibility');
+        $div = ord($binary[$offset]); $offset += 1; $remaining -= 1;
+
+        // duration u64 (optional)
+        $durationDec = null;
+        if ($remaining >= 8) {
+            $durationDec = self::readU64LEDecAt($binary, $offset);
+            $offset += 8; $remaining -= 8;
         }
-        $u = unpack('Pvalue', $chunk);
-        if ($u === false) {
-            throw new \RuntimeException('unpack failed for mosaicId.');
-        }
-        $mosaicId = $u['value'];
-        $offset += 8;
-        if (!isset($binary[$offset])) {
-            throw new \RuntimeException('Unexpected EOF while reading flags (need 1 byte).');
-        }
-        $flags = ord($binary[$offset]);
-        $offset += 1;
-        if (!isset($binary[$offset])) {
-            throw new \RuntimeException('Unexpected EOF while reading divisibility (need 1 byte).');
-        }
-        $divisibility = ord($binary[$offset]);
-        $offset += 1;
-        $chunk = substr($binary, $offset, 8);
-        if (strlen($chunk) !== 8) {
-            throw new \RuntimeException('Unexpected EOF while reading duration (need 8 bytes).');
-        }
-        $u = unpack('Pvalue', $chunk);
-        if ($u === false) {
-            throw new \RuntimeException('unpack failed for duration.');
-        }
-        $duration = $u['value'];
-        $offset += 8;
-        return new self($nonce, $mosaicId, $flags, $divisibility, $duration);
+
+        return new self($nonce, $mosaicIdDec, $flags, $div, $durationDec, $header);
     }
 
     public function serialize(): string
     {
-        return
-            pack('V', $this->nonce) .
-            pack('P', $this->mosaicId) .
-            chr($this->flags) .
-            chr($this->divisibility) .
-            pack('P', $this->duration);
+        $body = '';
+        // nonce u32
+        $body .= pack('V', $this->nonce);
+        // mosaicId u64
+        $body .= self::u64LE($this->mosaicIdDec);
+        // flags u8
+        $body .= chr($this->flags);
+        // divisibility u8
+        $body .= chr($this->divisibility);
+        // duration u64 (optional)
+        if ($this->durationDec !== null) {
+            $body .= self::u64LE($this->durationDec);
+        }
+        return $this->header . $body;
     }
 
-    public function size(): int
+    // ---------- u64 helpers (decimal-string safe) ----------
+    private static function readU64LEDecAt(string $bin, int $off): string
     {
-        return self::SIZE;
+        $dec = '0';
+        for ($i = 7; $i >= 0; $i--) {
+            $dec = self::mulDecBy($dec, 256);
+            $dec = self::addDecSmall($dec, ord($bin[$off + $i]));
+        }
+        return $dec;
     }
 
-    public function isSupplyMutable(): bool
+    private static function u64LE(string $dec): string
     {
-        return ($this->flags & self::FLAG_SUPPLY_MUTABLE) !== 0;
+        $max = '18446744073709551615';
+        if (!preg_match('/^[0-9]+$/', $dec) || self::cmpDec($dec, $max) > 0) {
+            throw new \InvalidArgumentException('u64 decimal out of range');
+        }
+        $cur = ltrim($dec, '0');
+        if ($cur === '') return str_repeat("\x00", 8);
+        $bytes = [];
+        for ($i = 0; $i < 8; $i++) {
+            [$q, $r] = self::divmodDecBy($cur, 256);
+            $bytes[] = chr($r);
+            if ($q === '0') {
+                for ($j = $i + 1; $j < 8; $j++) $bytes[] = "\x00";
+                return implode('', $bytes);
+            }
+            $cur = $q;
+        }
+        if ($cur !== '0') throw new \InvalidArgumentException('u64 overflow');
+        return implode('', $bytes);
     }
 
-    public function isTransferable(): bool
+    private static function cmpDec(string $a, string $b): int
     {
-        return ($this->flags & self::FLAG_TRANSFERABLE) !== 0;
+        $a = ltrim($a, '0'); if ($a === '') $a = '0';
+        $b = ltrim($b, '0'); if ($b === '') $b = '0';
+        $la = strlen($a); $lb = strlen($b);
+        if ($la !== $lb) return $la <=> $lb;
+        return strcmp($a, $b) <=> 0;
     }
 
-    public function isRestrictable(): bool
+    /** @return array{0:string,1:int} */
+    private static function divmodDecBy(string $dec, int $by): array
     {
-        return ($this->flags & self::FLAG_RESTRICTABLE) !== 0;
+        $len = strlen($dec);
+        $q = '';
+        $carry = 0;
+        for ($i = 0; $i < $len; $i++) {
+            $carry = $carry * 10 + (ord($dec[$i]) - 48);
+            $digit = intdiv((int)$carry, (int)$by);
+            $carry = (int)($carry % $by);
+            if ($q !== '' || $digit !== 0) {
+                $q .= chr($digit + 48);
+            }
+        }
+        if ($q === '') {
+            $q = '0';
+        }
+        return [$q, $carry];
     }
 
-    public function isRevokable(): bool
+    private static function mulDecBy(string $dec, int $by): string
     {
-        return ($this->flags & self::FLAG_REVOKABLE) !== 0;
+        if ($dec === '0') {
+            return '0';
+        }
+        $carry = 0;
+        $out = '';
+        for ($i = strlen($dec) - 1; $i >= 0; $i--) {
+            $t = (ord($dec[$i]) - 48) * $by + $carry;
+            $out .= chr(($t % 10) + 48);
+            $carry = intdiv((int)$t, 10);
+        }
+        while ($carry > 0) {
+            $out .= chr(($carry % 10) + 48);
+            $carry = intdiv((int)$carry, 10);
+        }
+        return strrev($out);
+    }
+
+    private static function addDecSmall(string $dec, int $small): string
+    {
+        $i = strlen($dec) - 1;
+        $carry = $small;
+        $out = '';
+        while ($i >= 0 || $carry > 0) {
+            $d = $i >= 0 ? (ord($dec[$i]) - 48) : 0;
+            $t = $d + $carry;
+            $out .= chr(($t % 10) + 48);
+            $carry = intdiv((int)$t, 10);
+            $i--;
+        }
+        $res = ltrim(strrev($out), '0');
+        return $res === '' ? '0' : $res;
     }
 }
