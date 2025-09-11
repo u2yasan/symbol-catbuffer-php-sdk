@@ -1,0 +1,6 @@
+name: gen-models
+steps:
+  - prompt: prompts/model-mosaic-id.prompt.md
+    vars:
+      namespace: "SymbolSdk\\Model"
+      class_name: "MosaicId"

@@ -1,0 +1,14 @@
+{
+  "name": "symbol-catbuffer-php-sdk-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen:mosaic-id": "ts-node tools/promptgen.ts prompts/model-mosaic-id.prompt.md namespace=SymbolSdk\\\\Model class_name=MosaicId"
+  },
+  "devDependencies": {
+    "gray-matter": "^4.0.3",
+    "mustache": "^4.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
