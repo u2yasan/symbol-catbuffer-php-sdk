@@ -2,82 +2,62 @@
 declare(strict_types=1);
 namespace SymbolSdk\Model;
 
-use InvalidArgumentException;
-use RuntimeException;
-
 final readonly class MosaicId
 {
     private const SIZE = 8;
-    private int $hi;
-    private int $lo;
+    private const UINT64_MAX = '18446744073709551615';
+    private string $value;
 
-    private function __construct(int $hi, int $lo)
+    private function __construct(string $value)
     {
-        if ($hi < 0 || $hi > 0xFFFFFFFF) {
-            throw new InvalidArgumentException('hi is out of range');
-        }
-        if ($lo < 0 || $lo > 0xFFFFFFFF) {
-            throw new InvalidArgumentException('lo is out of range');
-        }
-        $this->hi = $hi;
-        $this->lo = $lo;
+        $this->value = $value;
     }
 
-    public static function fromUint64String(string $value): self
+    public static function fromUint64String(string $decimal): self
     {
-        if (!preg_match('/^[0-9]{1,20}$/', $value)) {
-            throw new InvalidArgumentException('Invalid uint64 string');
+        if (!preg_match('/^[0-9]+$/', $decimal)) {
+            throw new \InvalidArgumentException('Invalid uint64 decimal.');
         }
-        if (strlen($value) > 1 && $value[0] === '0') {
-            throw new InvalidArgumentException('Leading zeros are not allowed');
+        if (bccomp($decimal, '0') < 0 || bccomp($decimal, self::UINT64_MAX) > 0) {
+            throw new \InvalidArgumentException('Value out of uint64 range.');
         }
-
-        // Convert string to two 32bit words (hi, lo) using only PHP int ops
-        $val = $value;
-        $hi = 0;
-        $lo = 0;
-        $maxUint64 = '18446744073709551615';
-        if (strlen($val) > strlen($maxUint64) || (strlen($val) === strlen($maxUint64) && $val > $maxUint64)) {
-            throw new InvalidArgumentException('Value out of uint64 range');
-        }
-        // Using math, repeatedly divide by 2^32 (=4294967296)
-        $NUM_BASE = 4294967296;
-
-        $hi = intdiv((int)($val / $NUM_BASE), 1);
-        $lo = (int)($val % $NUM_BASE);
-        if (bccomp($val, (string)$NUM_BASE) >= 0) {
-            // PHP 8.3: intdiv string disables. Use bcdiv/bcmod for 53b+.
-            $hi = (int)bcdiv($val, (string)$NUM_BASE, 0);
-            $lo = (int)bcmod($val, (string)$NUM_BASE);
-        }
-
-        return new self($hi, $lo);
+        return new self(ltrim($decimal, '0') === '' ? '0' : ltrim($decimal, '0'));
     }
 
-    public static function fromBinary(string $payload): self
+    public static function fromBinary(string $binary): self
     {
-        if (strlen($payload) !== self::SIZE) {
-            throw new InvalidArgumentException('Binary length mismatch');
+        if (strlen($binary) !== self::SIZE) {
+            throw new \InvalidArgumentException('Binary must be exactly 8 bytes.');
         }
-        $lo = unpack('V', substr($payload, 0, 4))[1];
-        $hi = unpack('V', substr($payload, 4, 4))[1];
-        return new self($hi, $lo);
+        $unpacked = unpack('V2', $binary);
+        if ($unpacked === false) {
+            throw new \RuntimeException('Unpack failed.');
+        }
+        [$lo, $hi] = [$unpacked[1], $unpacked[2]];
+        $decimal = bcadd((string)$lo, bcmul((string)$hi, '4294967296'));
+        return self::fromUint64String($decimal);
     }
 
     public function serialize(): string
     {
-        return pack('V', $this->lo) . pack('V', $this->hi);
+        $num = $this->value;
+        $hi = '0';
+        $lo = $num;
+        if (bccomp($num, '4294967295') > 0) {
+            $hi = bcdiv($num, '4294967296', 0);
+            $lo = bcmod($num, '4294967296');
+        }
+        $lo32 = (int)$lo;
+        $hi32 = (int)$hi;
+        $packed = pack('V2', $lo32, $hi32);
+        if (strlen($packed) !== self::SIZE) {
+            throw new \RuntimeException('Serialization failed.');
+        }
+        return $packed;
     }
 
     public function __toString(): string
     {
-        // Reconstruct from hi/lo
-        $NUM_BASE = '4294967296';
-        $hi = (string)$this->hi;
-        $lo = (string)$this->lo;
-        if ($hi === '0') {
-            return $lo;
-        }
-        return bcadd(bcmul($hi, $NUM_BASE), $lo, 0);
+        return $this->value;
     }
 }
