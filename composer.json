@@ -6,6 +6,11 @@
   "autoload": {
     "psr-4": { "SymbolSdk\\": "src/" }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "SymbolSdk\\Tests\\": "tests/"
+    }
+  },
   "require": {
     "php": ">=8.3"
   },
