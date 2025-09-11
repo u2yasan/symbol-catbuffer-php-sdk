@@ -183,3 +183,26 @@ public function readVector(int $count, callable $reader): array {
 - ❌ 文字列に対する `/`・`%` → ✅ `divmodDecBy()` などの **10進文字列演算**を使う
 - ❌ `ord()` の結果に対する 0..255 のレンジチェック → ✅ **書かない**（常に 0..255）
 - ❌ 未定義の親メソッド呼び出し → ✅ 親前提があるときのみ（指定が無ければ**単体実装**）
+
+
+## Transaction 共通ルール
+
+- **ヘッダの扱い**  
+  `parseHeader()` の戻りは `['headerRaw','size','version','network','type','maxFeeDec','deadlineDec','offset']`。  
+  キー名を**絶対に変えない**こと。`serialize()` は `AbstractTransaction` に任せ、サブクラスでは **encodeBody() だけ**実装。
+
+- **シグネチャ縛り**  
+  サブクラスのコンストラクタは「Tx固有フィールド → ヘッダ7項目」の順。**引数名も固定**。
+
+- **可視性**  
+  `encodeBody()` は **protected**、`decodeBody()` は **protected static**。  
+  上書き時に可視性を落とさない（private にしない）。
+
+- **配列の値型**  
+  `@var list<Foo>` / `@param list<Foo>` を必ず付ける。返り値に配列を使う時は `@return array<string,mixed>` など**値型を指定**。
+
+- **u64**  
+  10進文字列で保持、直列化/復元は `AbstractTransaction` の `u64LE()/u64DecAt()` を使う。`unpack('P')` は使わない。
+
+- **エラー処理**  
+  残量不足は `RuntimeException`、値域違反は `InvalidArgumentException`。メッセージに不足バイト数や期待サイズを含める。
