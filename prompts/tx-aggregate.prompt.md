@@ -25,6 +25,7 @@ dependencies:
 ---
 
 {{> common-principles.md }}
+{{> partials/common-php-guardrails.md }}
 
 # Task
 - payload は **インナートランザクションをそのままバイト列**として扱う最小版でも良い（まずはパススルー）。

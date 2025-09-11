@@ -26,6 +26,7 @@ dependencies:
 ---
 
 {{> common-principles.md }}
+{{> partials/common-php-guardrails.md }}
 
 # Role
 catbuffer順序で Transfer のボディを正確に実装し、ヘッダと連結して同一バイト列を保証します。

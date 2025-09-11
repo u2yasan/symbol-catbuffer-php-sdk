@@ -13,6 +13,8 @@ inputs:
     invalid_size: "HEXを貼る（期待は例外）"
 ---
 
+{{> partials/common-php-guardrails.md }}
+
 # Role
 PHPUnit 10+ で、decode→re-encode 一致、主要フィールドの期待値一致、例外検証を dataProvider で作成。
 

@@ -18,6 +18,7 @@ dependencies:
 ---
 
 {{> common-principles.md }}
+{{> partials/common-php-guardrails.md }}
 
 # Task
 - linkedPublicKey(32B固定)の長さ検証

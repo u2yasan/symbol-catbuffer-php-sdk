@@ -22,6 +22,7 @@ dependencies:
 ---
 
 {{> common-principles.md }}
+{{> partials/common-php-guardrails.md }}
 
 # Task
 - registrationType により分岐：root→duration(u64)、child→parentId(u64)

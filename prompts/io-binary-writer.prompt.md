@@ -11,6 +11,7 @@ references:
 ---
 
 {{> common-principles.md }}
+{{> partials/common-php-guardrails.md }}
 
 # Role
 あなたは Symbol/catapult の catbuffer と JS/Python SDK に精通した PHP 8.3 エキスパートです。
