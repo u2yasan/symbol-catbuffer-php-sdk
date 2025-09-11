@@ -5,11 +5,16 @@ namespace SymbolSdk\Transaction;
 
 /**
  * MosaicDefinitionTransaction (ヘッダ+ボディ形式のHEX対応)
- * - 入力HEXは 120B ヘッダ + ボディ。ヘッダは保持し serialize() で前置してラウンドトリップ一致。
- * - u64 は10進文字列で保持し、LE8 として直列化/復元。
+ * - 入力HEXは 128B ヘッダ + ボディ。ヘッダは保持し serialize() で前置してラウンドトリップ一致。
+ * - body 形式:
+ *   nonce(u32LE) + mosaicId(u64LE) + flags(u8) + divisibility(u8) + duration(u64LE?)  // duration は存在する場合のみ
+ * - u64 は 10進文字列で保持し、LE8 として直列化/復元。
  */
 final class MosaicDefinitionTransaction
 {
+    private const HEADER_SIZE = 128;
+
+    /** 入力トランザクションの 128B ヘッダを保持（ラウンドトリップ一致用） */
     private string $header;
 
     public function __construct(
@@ -26,39 +31,57 @@ final class MosaicDefinitionTransaction
     public static function fromBinary(string $binary): self
     {
         $len = strlen($binary);
-        if ($len < 120) {
-            throw new \InvalidArgumentException('Invalid binary size: full transaction expected');
+        if ($len < self::HEADER_SIZE) {
+            throw new \InvalidArgumentException('Invalid binary size: full transaction (>=128B) expected');
         }
-        $header = substr($binary, 0, 120);
-        $offset = 120;
+
+        $header = substr($binary, 0, self::HEADER_SIZE);
+        $offset = self::HEADER_SIZE;
         $remaining = $len - $offset;
 
         // nonce u32 (LE)
-        if ($remaining < 4) throw new \RuntimeException('EOF nonce');
+        if ($remaining < 4) {
+            throw new \RuntimeException('EOF nonce');
+        }
         $u = unpack('Vvalue', substr($binary, $offset, 4));
-        if ($u === false) throw new \RuntimeException('unpack nonce failed');
+        if ($u === false) {
+            throw new \RuntimeException('unpack nonce failed');
+        }
         /** @var array{value:int} $u */
         $nonce = $u['value'];
-        $offset += 4; $remaining -= 4;
+        $offset += 4;
+        $remaining -= 4;
 
         // mosaicId u64 (LE) -> decimal
-        if ($remaining < 8) throw new \RuntimeException('EOF mosaicId');
+        if ($remaining < 8) {
+            throw new \RuntimeException('EOF mosaicId');
+        }
         $mosaicIdDec = self::readU64LEDecAt($binary, $offset);
-        $offset += 8; $remaining -= 8;
+        $offset += 8;
+        $remaining -= 8;
 
         // flags u8
-        if ($remaining < 1) throw new \RuntimeException('EOF flags');
-        $flags = ord($binary[$offset]); $offset += 1; $remaining -= 1;
+        if ($remaining < 1) {
+            throw new \RuntimeException('EOF flags');
+        }
+        $flags = ord($binary[$offset]);
+        $offset += 1;
+        $remaining -= 1;
 
         // divisibility u8
-        if ($remaining < 1) throw new \RuntimeException('EOF divisibility');
-        $div = ord($binary[$offset]); $offset += 1; $remaining -= 1;
+        if ($remaining < 1) {
+            throw new \RuntimeException('EOF divisibility');
+        }
+        $div = ord($binary[$offset]);
+        $offset += 1;
+        $remaining -= 1;
 
         // duration u64 (optional)
         $durationDec = null;
         if ($remaining >= 8) {
             $durationDec = self::readU64LEDecAt($binary, $offset);
-            $offset += 8; $remaining -= 8;
+            $offset += 8;
+            $remaining -= 8;
         }
 
         return new self($nonce, $mosaicIdDec, $flags, $div, $durationDec, $header);
@@ -100,18 +123,24 @@ final class MosaicDefinitionTransaction
             throw new \InvalidArgumentException('u64 decimal out of range');
         }
         $cur = ltrim($dec, '0');
-        if ($cur === '') return str_repeat("\x00", 8);
+        if ($cur === '') {
+            return str_repeat("\x00", 8);
+        }
         $bytes = [];
         for ($i = 0; $i < 8; $i++) {
             [$q, $r] = self::divmodDecBy($cur, 256);
             $bytes[] = chr($r);
             if ($q === '0') {
-                for ($j = $i + 1; $j < 8; $j++) $bytes[] = "\x00";
+                for ($j = $i + 1; $j < 8; $j++) {
+                    $bytes[] = "\x00";
+                }
                 return implode('', $bytes);
             }
             $cur = $q;
         }
-        if ($cur !== '0') throw new \InvalidArgumentException('u64 overflow');
+        if ($cur !== '0') {
+            throw new \InvalidArgumentException('u64 overflow');
+        }
         return implode('', $bytes);
     }
 
@@ -120,7 +149,9 @@ final class MosaicDefinitionTransaction
         $a = ltrim($a, '0'); if ($a === '') $a = '0';
         $b = ltrim($b, '0'); if ($b === '') $b = '0';
         $la = strlen($a); $lb = strlen($b);
-        if ($la !== $lb) return $la <=> $lb;
+        if ($la !== $lb) {
+            return $la <=> $lb;
+        }
         return strcmp($a, $b) <=> 0;
     }
 
