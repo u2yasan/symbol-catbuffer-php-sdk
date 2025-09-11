@@ -37,24 +37,85 @@
 ## Uint64（LE8）— 安全な10進文字列で保持
 - 64bit整数は **10進文字列**（`0..18446744073709551615`）で保持。直列化は **LE 8バイト**。
 - **禁止事項**：10進文字列に対して **`/` や `%`** 等の数値演算を使わない（PHPStan: *Binary operation between string and int* を回避）。
+- **タウトロジー禁止**：`ord()` の結果は常に **0..255**。`0..255` の範囲チェックや、PHPStan が静的に「常に真/偽」と判断する比較（例：`$x < 0 || $x > 4294967295` など）は**書かない**。
 - 実装に含める最小ヘルパ（同クラス内 or 共通化）：
   ```php
   private static function cmpDec(string $a, string $b): int { /* 長さ→辞書順 */ }
   /** @return array{0:string,1:int} */
-  private static function divmodDecBy(string $dec, int $by): array { /* 手動割り算 */ }
-  private static function mulDecBy(string $dec, int $by): string { /* 手動乗算 */ }
-  private static function addDecSmall(string $dec, int $small): string { /* 桁上がり */ }
-  private static function readU64LEDecAt(string $bin, int $off): string { /* base256畳み込み */ }
+  private static function divmodDecBy(string $dec, int $by): array {
+      // long division in base10
+      $len = strlen($dec);
+      $q = '';
+      $carry = 0; // int
+      for ($i = 0; $i < $len; $i++) {
+          $carry = $carry * 10 + (ord($dec[$i]) - 48); // int
+          $digit = intdiv((int)$carry, (int)$by);       // 明示的に (int) キャスト
+          $carry = (int)($carry % $by);                 // 明示的に (int)
+          if ($q !== '' || $digit !== 0) $q .= chr($digit + 48);
+      }
+      if ($q === '') $q = '0';
+      return [$q, $carry];
+  }
+  private static function mulDecBy(string $dec, int $by): string {
+      if ($dec === '0') return '0';
+      $carry = 0; $out = '';
+      for ($i = strlen($dec) - 1; $i >= 0; $i--) {
+          $t = (ord($dec[$i]) - 48) * $by + $carry; // int
+          $out .= chr(($t % 10) + 48);
+          $carry = intdiv((int)$t, 10);             // 明示的に (int)
+      }
+      while ($carry > 0) {
+          $out .= chr(($carry % 10) + 48);
+          $carry = intdiv((int)$carry, 10);         // 明示的に (int)
+      }
+      return strrev($out);
+  }
+  private static function addDecSmall(string $dec, int $small): string {
+      $i = strlen($dec) - 1; $carry = $small; $out = '';
+      while ($i >= 0 || $carry > 0) {
+          $d = $i >= 0 ? (ord($dec[$i]) - 48) : 0;
+          $t = $d + $carry;
+          $out .= chr(($t % 10) + 48);
+          $carry = intdiv((int)$t, 10);            // 明示的に (int)
+          $i--;
+      }
+      for (; $i >= 0; $i--) $out .= $dec[$i];
+      $res = strrev($out);
+      $res = ltrim($res, '0');
+      return $res === '' ? '0' : $res;
+  }
+  private static function readU64LEDecAt(string $bin, int $off): string {
+      $dec = '0';
+      for ($i = 7; $i >= 0; $i--) {
+          $dec = self::mulDecBy($dec, 256);
+          $dec = self::addDecSmall($dec, ord($bin[$off + $i]));
+      }
+      return $dec;
+  }
   private static function u64LE(string $dec): string {
       $max = '18446744073709551615';
       if (!preg_match('/^[0-9]+$/', $dec) || self::cmpDec($dec, $max) > 0) {
           throw new \InvalidArgumentException('u64 decimal out of range');
       }
-      // divmod で8バイト生成
+      $dec = ltrim($dec, '0');
+      if ($dec === '') return "\x00\x00\x00\x00\x00\x00\x00\x00";
+      $bytes = [];
+      $cur = $dec;
+      for ($i = 0; $i < 8; $i++) {
+          [$q, $r] = self::divmodDecBy($cur, 256); // r: int 0..255
+          $bytes[] = chr($r);
+          if ($q === '0') {
+              for ($j = $i + 1; $j < 8; $j++) $bytes[] = "\x00";
+              return implode('', $bytes);
+          }
+          $cur = $q;
+      }
+      if ($cur !== '0') throw new \InvalidArgumentException('u64 overflow');
+      return implode('', $bytes);
   }
   ```
 - **LE8 → 10進** は **base-256 の畳み込み**で行う（*dec = dec*256 + byte* を 8回繰り返す）。
-- **同ファイルの値オブジェクト（例：Mosaic/MosaicId）**が u64 を直列化する場合、**他クラスの private を呼ばない**（必要なら同等ヘルパを複製し自己完結）。
+- **他クラスの private を呼ばない**（必要なら同等ヘルパを複製し自己完結）。
 
 ## Arrays & Generics（PHPDocで厳密化）
 - 可変配列は **値型を明示**：
@@ -102,4 +163,5 @@
 - ❌ `count($string)` → ✅ `strlen($string)`
 - ❌ `readonly` 再代入 → ✅ ローカルで整形 → **一度だけ**代入
 - ❌ 文字列に対する `/`・`%` → ✅ `divmodDecBy()` などの **10進文字列演算**を使う
+- ❌ `ord()` の結果に対する 0..255 のレンジチェック → ✅ **書かない**（常に 0..255）
 - ❌ 未定義の親メソッド呼び出し → ✅ 親前提があるときのみ（指定が無ければ**単体実装**）
