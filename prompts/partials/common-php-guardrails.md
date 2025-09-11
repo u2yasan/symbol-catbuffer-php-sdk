@@ -137,6 +137,24 @@
   ```
 - 文字列には `count()` を使わない。**`strlen()` を使う**。
 
+### Generics風ヘルパ（PHPStanフレンドリー版）
+- **テンプレートは使わない**（メソッド内に T を“パラメータ型”として参照できないため警告になる）。
+- 代わりに `mixed` を使い、呼び出し側で具体型を担保する。
+
+```php
+/**
+ * @param int $count
+ * @param callable(int):mixed $reader  // 要素 i を読み出して返すクロージャ
+ * @return list<mixed>
+ */
+public function readVector(int $count, callable $reader): array {
+    $out = [];
+    for ($i = 0; $i < $count; $i++) {
+        $out[] = $reader($i);
+    }
+    return $out; // list<mixed>
+}
+
 ## Class Header & Namespace
 - 先頭3行の順序は固定：
   ```php
