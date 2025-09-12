@@ -1,82 +1,72 @@
 <?php
-
 declare(strict_types=1);
 
 namespace SymbolSdk\Tests\Transaction;
 
 use PHPUnit\Framework\TestCase;
+use SymbolSdk\Tests\TestUtil\Hex;
 use SymbolSdk\Tests\TestUtil\Vectors;
 use SymbolSdk\Transaction\TransferTransaction;
 
 final class TransferFromJsonVectorsTest extends TestCase
 {
     /**
-     * @return array<string, array{hex: string, name: string}|array{__skip__: true}>
+     * @return array<string, array{hex: string, name: string}>
      */
     public static function providerVectors(): array
     {
-        $jsonPath = \dirname(__DIR__).'/vectors/symbol/models/transactions.json';
-
-        if (!\file_exists($jsonPath)) {
-            return ['__skip__' => ['__skip__' => true]];
+        $json = \realpath(__DIR__ . '/../vectors/symbol/models/transactions.json');
+        if ($json === false) {
+            return []; // データなし → 空配列（__skip__ は使わない）
         }
 
-        $all = Vectors::loadTransactions($jsonPath);
-        $picked = Vectors::filterBySchemaEquals($all, 'TransferTransactionV1');
+        /** @var array<int, array{schema_name?: string, test_name?: string, type?: string, hex: string, meta?: array<mixed>}> $txs */
+        $txs = Vectors::loadTransactions($json);
 
         /** @var array<string, array{hex: string, name: string}> $out */
         $out = [];
+        $i = 0;
 
-        foreach ($picked as $i => $rec) {
-            // Vectors 側で hex は必ず string として格納される前提
-            $hex = $rec['hex'];
-            $name = $rec['test_name'] ?? null;
-
-            if (null === $name) {
-                $name = 'transfer_'.(string) $i;
-            }
-
-            if (1 !== \preg_match('/^[0-9a-fA-F]+$/', $hex)) {
+        foreach ($txs as $rec) {
+            $schema = $rec['schema_name'] ?? '';
+            if ($schema === '' || \stripos($schema, 'TransferTransaction') === false) {
                 continue;
             }
 
-            $out[$name] = [['hex' => $hex, 'name' => $name]];
+            // 型上 hex は必須。空は除外。
+            $hex = $rec['hex'];
+            if ($hex === '') {
+                continue;
+            }
+
+            $name = $rec['test_name'] ?? ('transfer_' . (string) $i);
+
+            // 一段のみ格納（多重配列禁止）
+            $out[$name] = [
+                'hex'  => $hex,
+                'name' => $name,
+            ];
+            $i++;
         }
 
-        if (0 === \count($out)) {
-            return ['__skip__' => [['__skip__' => true]]];
-        }
-
-        return $out;
+        return $out; // 見つからなければ空配列
     }
 
     /**
+     * @param array{hex: string, name: string} $case
      * @dataProvider providerVectors
-     *
-     * @param array{hex: string, name: string}|array{__skip__: true} $case
      */
     public function testRoundTrip(array $case): void
     {
-        if (isset($case['__skip__'])) {
-            self::markTestSkipped('No transfer vectors found.');
-        }
-
+        // dataProvider が空ならテスト自体は走らない
         /** @var array{hex: string, name: string} $case */
+
         $hex = $case['hex'];
-
-        if ((\strlen($hex) % 2) !== 0 || 1 !== \preg_match('/^[0-9a-fA-F]+$/', $hex)) {
-            self::markTestSkipped('Invalid hex vector: '.$case['name']);
-        }
-
-        $bin = \hex2bin($hex);
-
-        if (false === $bin) {
-            self::markTestSkipped('hex2bin failed: '.$case['name']);
-        }
+        $bin = Hex::fromString($hex);
 
         $tx = TransferTransaction::fromBinary($bin);
-        $out = $tx->serialize();
+        $re = $tx->serialize();
 
-        self::assertSame(\strtolower($hex), \strtolower(\bin2hex($out)), 'Re-encoded hex must equal original: '.$case['name']);
+        self::assertSame(\strtolower($hex), \bin2hex($re), 're-encoded hex should equal input');
     }
 }
