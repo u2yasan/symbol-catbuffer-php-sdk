@@ -9,11 +9,6 @@ parameters:
 
   # テスト用の緩和（PHPUnitのマッチャや markTestSkipped などに絡む警告を抑制）
   ignoreErrors:
-    - '#dynamicCall#'
-    - '#ternary\.shortNotAllowed#'
-    - '#function\.alreadyNarrowedType#'
-    - '#booleanOr\.always(False|True)#'
-    - '#cast\.useless#'
 
   # autoload で tests の補助クラスを拾う
   bootstrapFiles:
