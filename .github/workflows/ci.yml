@@ -1,13 +1,28 @@
-name: ci
-on: [push, pull_request]
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  qa:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
-      - run: composer install --no-interaction --prefer-dist
-      - run: composer analyse
-      - run: composer test
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer
+      - name: Composer install
+        run: composer install --no-interaction --prefer-dist
+      - name: Code Style (dry-run)
+        run: composer check:cs
+      - name: Static Analysis
+        run: composer analyse
+      - name: Tests
+        run: composer test
