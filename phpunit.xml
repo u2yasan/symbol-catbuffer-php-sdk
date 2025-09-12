@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="vendor/autoload.php" colors="true">
+<phpunit
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+  bootstrap="vendor/autoload.php"
+  colors="true"
+  cacheResultFile=".phpunit.cache/test-results"
+>
   <testsuites>
     <testsuite name="Symbol PHP SDK Tests">
       <directory>tests</directory>
     </testsuite>
   </testsuites>
+
+  <!-- PHPUnit 10 では <source> に対象コードを指定 -->
+  <source restrictDeprecations="true" restrictNotices="true" restrictWarnings="true">
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+  </source>
 </phpunit>
