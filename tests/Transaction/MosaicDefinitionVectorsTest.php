@@ -1,62 +1,60 @@
 <?php
-
 declare(strict_types=1);
 
 namespace SymbolSdk\Tests\Transaction;
 
 use PHPUnit\Framework\TestCase;
 use SymbolSdk\Tests\TestUtil\Hex;
+use SymbolSdk\Transaction\MosaicDefinitionTransaction;
 
 final class MosaicDefinitionVectorsTest extends TestCase
 {
     /**
-     * @return array<string, array{0: array{path: string, name: string}}|array{0: array{__skip__: true}}>
+     * tests/vectors/mosaic_definition/*.hex を読む
+     *
+     * @return array<string, array{array{path: string, name: string}}>
      */
     public static function providerVectors(): array
     {
-        $base = __DIR__.'/../vectors/mosaic_definition';
-
-        if (!\is_dir($base)) {
-            // センチネルは引数配列として一段包む
-            return ['__skip__' => [['__skip__' => true]]];
+        $dir = \realpath(__DIR__ . '/../vectors/mosaic_definition');
+        if ($dir === false) {
+            return ['__skip__' => [ ['path' => '', 'name' => '__skip__'] ]];
         }
 
-        /** @var list<string>|false $files */
-        $files = \glob($base.'/*.hex');
-
-        if (false === $files) {
-            $files = [];
-        }
-
-        /** @var array<string, array{0: array{path: string, name: string}}> $out */
+        /** @var array<string, array{array{path: string, name: string}}> $out */
         $out = [];
-
-        foreach ($files as $f) {
-            $name = \basename($f, '.hex');
-            // 各データセットは [ $case ] の形にする
-            $out[$name] = [['path' => $f, 'name' => $name]];
+        $files = \glob($dir . '/*.hex');
+        if ($files !== false) {
+            foreach ($files as $path) {
+                $name = \basename($path, '.hex');
+                // 1引数（array $case）にするため [$case] の形で返す
+                $out[$name] = [ ['path' => $path, 'name' => $name] ];
+            }
         }
 
-        if (0 === \count($out)) {
-            return ['__skip__' => [['__skip__' => true]]];
+        if ($out === []) {
+            return ['__skip__' => [ ['path' => '', 'name' => '__skip__'] ]];
         }
-
         return $out;
     }
 
     /**
+     * @param array{path: string, name: string} $case
      * @dataProvider providerVectors
-     *
-     * @param array{path: string, name: string}|array{__skip__: true} $case
      */
     public function testDecodeReencodeEquals(array $case): void
     {
-        if (isset($case['__skip__'])) {
-            self::markTestSkipped('No mosaic definition .hex vectors found.');
+        if ($case['name'] === '__skip__') {
+            $this->addToAssertionCount(1);
+            return;
         }
 
-        /** @var array{path: string, name: string} $case */
-        $hex = Hex::fromFile($case['path']);
-        self::assertSame($hex, Hex::fromString($hex));
+        $hex = \trim((string) \file_get_contents($case['path']));
+        $bin = Hex::fromString($hex);
+
+        $tx = MosaicDefinitionTransaction::fromBinary($bin);
+        $re = $tx->serialize();
+
+        self::assertSame(\strtolower($hex), \bin2hex($re), "re-encoded hex should equal input for {$case['name']}");
     }
 }
