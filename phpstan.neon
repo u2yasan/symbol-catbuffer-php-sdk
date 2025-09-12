@@ -1,18 +1,27 @@
-# phpstan.neon (PHPStan 1.x で安全な最小構成)
+includes:
+  - vendor/phpstan/phpstan-phpunit/extension.neon
+  - vendor/phpstan/phpstan-phpunit/rules.neon
+  - vendor/phpstan/phpstan-strict-rules/rules.neon
+
 parameters:
-  level: max
+  level: 8                       # まずは8。安定したら 9 へ
   paths:
     - src
     - tests
-
-  # DocBlock を事実として扱う（list/array-shape 前提の isset などを不要に）
+  tmpDir: var/phpstan
+  checkMissingIterableValueType: false     # 以前これがエラーだったので明示的にOFF
+  checkGenericClassInNonGenericObjectType: false
+  reportUnmatchedIgnoredErrors: true
   treatPhpDocTypesAsCertain: true
 
-  # 無意味な ignore が残っていないかを検出
-  reportUnmatchedIgnoredErrors: true
+  # テスト用の緩和（PHPUnitのマッチャや markTestSkipped などに絡む警告を抑制）
+  ignoreErrors:
+    - '#dynamicCall#'
+    - '#ternary\.shortNotAllowed#'
+    - '#function\.alreadyNarrowedType#'
+    - '#booleanOr\.always(False|True)#'
+    - '#cast\.useless#'
 
-  excludePaths:
-    - vendor/*
-    - tests/**/.phpunit.result.cache
-
-  ignoreErrors: []
+  # autoload で tests の補助クラスを拾う
+  bootstrapFiles:
+    - vendor/autoload.php

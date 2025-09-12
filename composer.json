@@ -27,7 +27,9 @@
   },
   "scripts": {
     "analyse": "phpstan analyse",
-    "test": "phpunit --colors=always"
+    "test": "phpunit --colors=always",
+    "fix:cs": "php-cs-fixer fix --ansi",
+    "check:cs": "php-cs-fixer fix --dry-run --diff --ansi"
   },
   "config": {
     "allow-plugins": {

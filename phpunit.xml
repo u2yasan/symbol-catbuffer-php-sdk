@@ -12,7 +12,6 @@
     </testsuite>
   </testsuites>
 
-  <!-- PHPUnit 10 では <source> に対象コードを指定 -->
   <source restrictDeprecations="true" restrictNotices="true" restrictWarnings="true">
     <include>
       <directory suffix=".php">src</directory>
