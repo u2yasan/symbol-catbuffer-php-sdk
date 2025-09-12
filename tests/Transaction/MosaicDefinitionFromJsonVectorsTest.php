@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace SymbolSdk\Tests\Transaction;
@@ -14,37 +15,41 @@ final class MosaicDefinitionFromJsonVectorsTest extends TestCase
      */
     public static function providerVectors(): array
     {
-        $jsonPath = \dirname(__DIR__) . '/vectors/symbol/models/transactions.json';
+        $jsonPath = \dirname(__DIR__).'/vectors/symbol/models/transactions.json';
+
         if (!\file_exists($jsonPath)) {
             // ベクタ未配置ならセンチネルのみ
             return ['__skip__' => ['__skip__' => true]];
         }
 
-        $all    = Vectors::loadTransactions($jsonPath);
+        $all = Vectors::loadTransactions($jsonPath);
         $picked = Vectors::filterBySchemaEquals($all, 'MosaicDefinitionTransactionV1');
 
         /** @var array<string, array{hex:string, name:string}> $out */
         $out = [];
+
         foreach ($picked as $i => $rec) {
-            $hex  = $rec['hex'];
-            $name = $rec['test_name'] ?? ('mosaicdef_' . (string) $i);
+            $hex = $rec['hex'];
+            $name = $rec['test_name'] ?? ('mosaicdef_'.(string) $i);
 
             // 軽い HEX 妥当性（偶数桁は本体で確認）
-            if (\preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+            if (1 !== \preg_match('/^[0-9a-fA-F]+$/', $hex)) {
                 continue;
             }
 
-            $out[$name] = [ ['hex' => $hex, 'name' => $name] ];
+            $out[$name] = [['hex' => $hex, 'name' => $name]];
         }
 
-        if (\count($out) === 0) {
-            return ['__skip__' => [ ['__skip__' => true] ]];
+        if (0 === \count($out)) {
+            return ['__skip__' => [['__skip__' => true]]];
         }
+
         return $out;
     }
 
     /**
      * @dataProvider providerVectors
+     *
      * @param array{hex:string, name:string}|array{__skip__:true} $case
      */
     public function testRoundTrip(array $case): void
@@ -58,18 +63,19 @@ final class MosaicDefinitionFromJsonVectorsTest extends TestCase
         $hex = $case['hex'];
 
         // 偶数桁の HEX を要求
-        if ((\strlen($hex) % 2) !== 0 || \preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
-            self::markTestSkipped('Invalid hex vector: ' . $case['name']);
+        if ((\strlen($hex) % 2) !== 0 || 1 !== \preg_match('/^[0-9a-fA-F]+$/', $hex)) {
+            self::markTestSkipped('Invalid hex vector: '.$case['name']);
         }
 
         $bin = \hex2bin($hex);
-        if ($bin === false) {
-            self::markTestSkipped('hex2bin failed: ' . $case['name']);
+
+        if (false === $bin) {
+            self::markTestSkipped('hex2bin failed: '.$case['name']);
         }
 
-        $tx  = MosaicDefinitionTransaction::fromBinary($bin);
+        $tx = MosaicDefinitionTransaction::fromBinary($bin);
         $out = $tx->serialize();
 
-        self::assertSame(\strtolower($hex), \strtolower(\bin2hex($out)), 'Re-encoded hex must equal original: ' . $case['name']);
+        self::assertSame(\strtolower($hex), \strtolower(\bin2hex($out)), 'Re-encoded hex must equal original: '.$case['name']);
     }
 }

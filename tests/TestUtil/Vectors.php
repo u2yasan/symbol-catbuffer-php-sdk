@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace SymbolSdk\Tests\TestUtil;
@@ -23,27 +24,30 @@ final class Vectors
             throw new \RuntimeException("Vector not found: {$jsonPath}");
         }
         $json = \file_get_contents($jsonPath);
-        if ($json === false) {
+
+        if (false === $json) {
             throw new \RuntimeException("Failed to read: {$jsonPath}");
         }
 
         /** @var mixed $decoded */
         $decoded = \json_decode($json, true);
-        if ($decoded === null && \json_last_error() !== \JSON_ERROR_NONE) {
+
+        if (null === $decoded && \JSON_ERROR_NONE !== \json_last_error()) {
             throw new \RuntimeException("Invalid JSON: {$jsonPath}");
         }
 
         /** @var list<TxRecord> $out */
         $out = [];
         self::collectRecords($out, $decoded);
+
         return $out;
     }
 
     /**
      * 深さ優先で TxRecord を抽出して $out に追記する。
      *
-     * @param list<TxRecord> $out  ここにレコードを push していく（参照渡し）
-     * @param mixed          $node
+     * @param list<TxRecord> $out ここにレコードを push していく（参照渡し）
+     * @param mixed $node
      */
     private static function collectRecords(array &$out, mixed $node): void
     {
@@ -52,15 +56,19 @@ final class Vectors
         if (\is_array($node) && \array_key_exists('hex', $node) && \is_string($node['hex'])) {
             /** @var TxRecord $record */
             $record = ['hex' => $node['hex']];
+
             if (isset($node['schema_name']) && \is_string($node['schema_name'])) {
                 $record['schema_name'] = $node['schema_name'];
             }
+
             if (isset($node['test_name']) && \is_string($node['test_name'])) {
                 $record['test_name'] = $node['test_name'];
             }
+
             if (isset($node['type']) && \is_string($node['type'])) {
                 $record['type'] = $node['type'];
             }
+
             if (isset($node['meta']) && \is_array($node['meta'])) {
                 /** @var array<mixed> $meta */
                 $meta = $node['meta'];
@@ -68,6 +76,7 @@ final class Vectors
             }
 
             $out[] = $record; // list<TxRecord> に push
+
             return;
         }
 
@@ -81,68 +90,83 @@ final class Vectors
 
     /**
      * @param list<TxRecord> $records
+     *
      * @return list<TxRecord>
      */
     public static function filterBySchemaContains(array $records, string $needle): array
     {
         $needleLower = \strtolower($needle);
         $out = [];
+
         foreach ($records as $r) {
             $schema = $r['schema_name'] ?? null;
-            if ($schema !== null && \str_contains(\strtolower($schema), $needleLower)) {
+
+            if (null !== $schema && \str_contains(\strtolower($schema), $needleLower)) {
                 $out[] = $r;
             }
         }
+
         /** @var list<TxRecord> $out */
         return $out;
     }
 
     /**
      * @param list<TxRecord> $records
+     *
      * @return list<TxRecord>
      */
     public static function filterBySchemaEquals(array $records, string $schemaName): array
     {
         $out = [];
+
         foreach ($records as $r) {
             if (($r['schema_name'] ?? null) === $schemaName) {
                 $out[] = $r;
             }
         }
+
         /** @var list<TxRecord> $out */
         return $out;
     }
 
     /**
      * @param list<TxRecord> $records
+     *
      * @return list<TxRecord>
      */
     public static function filterByTestNameContains(array $records, string $needle): array
     {
         $needleLower = \strtolower($needle);
         $out = [];
+
         foreach ($records as $r) {
             $name = $r['test_name'] ?? null;
-            if ($name !== null && \str_contains(\strtolower($name), $needleLower)) {
+
+            if (null !== $name && \str_contains(\strtolower($name), $needleLower)) {
                 $out[] = $r;
             }
         }
+
         /** @var list<TxRecord> $out */
         return $out;
     }
 
     /**
      * @template T
+     *
      * @param list<TxRecord> $records
      * @param callable(TxRecord): T $fn
+     *
      * @return list<T>
      */
     public static function walk(array $records, callable $fn): array
     {
         $out = [];
+
         foreach ($records as $r) {
             $out[] = $fn($r);
         }
+
         /** @var list<T> $out */
         return $out;
     }

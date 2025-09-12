@@ -24,7 +24,7 @@ final class BinaryReader
      */
     public function __construct(string $buffer)
     {
-        if ($buffer === '') {
+        if ('' === $buffer) {
             throw new \InvalidArgumentException('BinaryReader requires non-empty input');
         }
         $this->buffer = $buffer;

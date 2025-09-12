@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace SymbolSdk\Tests\Model;
@@ -14,9 +15,9 @@ final class MosaicIdTest extends TestCase
     public static function providerHex(): array
     {
         return [
-            'zero'   => ['0000000000000000'],
-            'one'    => ['0100000000000000'],
-            'mid'    => ['cb00000000000000'],
+            'zero' => ['0000000000000000'],
+            'one' => ['0100000000000000'],
+            'mid' => ['cb00000000000000'],
             'max-32' => ['ffffffff00000000'],
             'max-64' => ['ffffffffffffffff'],
         ];
