@@ -1,16 +1,9 @@
-includes:
-  - vendor/phpstan/phpstan-phpunit/extension.neon
-  - vendor/phpstan/phpstan-phpunit/rules.neon
-  - vendor/phpstan/phpstan-strict-rules/rules.neon
-
 parameters:
   level: 8                       # まずは8。安定したら 9 へ
   paths:
     - src
     - tests
   tmpDir: var/phpstan
-  checkMissingIterableValueType: false     # 以前これがエラーだったので明示的にOFF
-  checkGenericClassInNonGenericObjectType: false
   reportUnmatchedIgnoredErrors: true
   treatPhpDocTypesAsCertain: true
 
