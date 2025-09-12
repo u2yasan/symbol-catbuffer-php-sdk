@@ -1,5 +1,18 @@
+# phpstan.neon (PHPStan 1.x で安全な最小構成)
 parameters:
   level: max
   paths:
     - src
     - tests
+
+  # DocBlock を事実として扱う（list/array-shape 前提の isset などを不要に）
+  treatPhpDocTypesAsCertain: true
+
+  # 無意味な ignore が残っていないかを検出
+  reportUnmatchedIgnoredErrors: true
+
+  excludePaths:
+    - vendor/*
+    - tests/**/.phpunit.result.cache
+
+  ignoreErrors: []
