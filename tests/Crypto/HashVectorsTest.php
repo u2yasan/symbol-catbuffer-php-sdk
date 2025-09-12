@@ -4,59 +4,62 @@ declare(strict_types=1);
 namespace SymbolSdk\Tests\Crypto;
 
 use PHPUnit\Framework\TestCase;
-use SymbolSdk\Tests\TestUtil\Hex;
+use RuntimeException;
 
 final class HashVectorsTest extends TestCase
 {
-    public function testKeccak256Set0(): void
+    public function testKeccak256Vectors(): void
     {
-        $path = __DIR__ . '/../vectors/symbol/crypto/0.test-keccak-256.json';
-        if (!is_file($path)) {
-            $this->markTestSkipped('keccak vectors not present');
+        $vecPath = \dirname(__DIR__) . '/vectors/symbol/crypto/keccak_256.json';
+        if (!\file_exists($vecPath)) {
+            self::markTestSkipped('keccak_256 vectors not present.');
         }
 
-        $raw = file_get_contents($path);
-        if ($raw === false) {
-            $this->markTestSkipped('cannot read keccak vectors');
+        // 多くの PHP では keccak256 は未実装。無ければスキップ。
+        $algos = \hash_algos();
+        if (!\in_array('keccak256', $algos, true)) {
+            self::markTestSkipped('hash() does not support keccak256 on this runtime.');
         }
 
-        /** @var mixed $cases */
-        $cases = json_decode($raw, true);
-        if (!is_array($cases)) {
-            $this->markTestSkipped('invalid keccak vectors json');
+        $json = \file_get_contents($vecPath);
+        if ($json === false) {
+            self::markTestSkipped('cannot read keccak_256.json');
         }
 
-        $processed = 0;
+        try {
+            /** @var mixed $decoded */
+            $decoded = \json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            self::markTestSkipped('invalid keccak_256.json: ' . $e->getMessage());
+        }
 
-        foreach ($cases as $c) {
-            if (!is_array($c)) {
-                continue;
+        if (!\is_array($decoded) || \count($decoded) === 0) {
+            self::markTestSkipped('no keccak256 vectors found');
+        }
+
+        foreach ($decoded as $idx => $case) {
+            if (!\is_array($case)
+                || !\array_key_exists('input', $case)
+                || !\array_key_exists('output', $case)
+                || !\is_string($case['input'])
+                || !\is_string($case['output'])) {
+                self::fail("vector[$idx] invalid shape");
             }
-            $inHex  = isset($c['input']) && is_string($c['input']) ? $c['input'] : '';
-            $outHex = isset($c['output']) && is_string($c['output']) ? $c['output'] : '';
 
-            if ($inHex === '' || $outHex === '') {
-                continue; // 型が揃っていないレコードは読み飛ばし
+            $in  = $case['input'];
+            $out = $case['output'];
+
+            // 16進表現の妥当性（入力は任意長、出力は32バイト＝64ヘクス）
+            self::assertMatchesRegularExpression('/^[0-9a-fA-F]*$/', $in,  "vector[$idx].input is not hex");
+            self::assertMatchesRegularExpression('/^[0-9a-fA-F]{64}$/', $out, "vector[$idx].output must be 32-byte hash hex");
+
+            $msg = \hex2bin($in);
+            if ($msg === false) {
+                self::fail("vector[$idx].input hex2bin failed");
             }
 
-            $msg = Hex::fromString($inHex);
-            $exp = strtolower(preg_replace('/[^0-9a-f]/', '', $outHex) ?? '');
-
-            // TODO: ハッシュ実装が入ったら以下を有効化
-            // $act = bin2hex(Keccak256::hash($msg));
-            // $this->assertSame($exp, $act);
-
-            // いまは型・フォーマットのみ確認（これが assertion）
-            $this->assertMatchesRegularExpression('/^[0-9a-f]*$/', $exp, 'expected hex output format');
-            $processed++;
-        }
-
-        // 1件も有効データを処理できなかったら risky になるので skip にする
-        if ($processed === 0) {
-            $this->markTestSkipped('no usable keccak vectors in file');
-        } else {
-            // 念のため件数にも assertion を入れておく
-            $this->assertGreaterThan(0, $processed, 'at least one vector row should be processed');
+            $got = \hash('keccak256', $msg, false); // hash() は string を返す契約
+            self::assertSame(\strtolower($out), \strtolower($got), "vector[$idx] mismatch");
         }
     }
 }

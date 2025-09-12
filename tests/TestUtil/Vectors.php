@@ -3,146 +3,147 @@ declare(strict_types=1);
 
 namespace SymbolSdk\Tests\TestUtil;
 
+/**
+ * @phpstan-type TxRecord array{
+ *   schema_name?: string,
+ *   test_name?: string,
+ *   type?: string,
+ *   hex: string,
+ *   meta?: array<mixed>
+ * }
+ */
 final class Vectors
 {
     /**
-     * transactions.json を読み、各レコード（HEX保持）を平坦化して返す。
-     *
-     * @return list<array{
-     *   schema_name?: string,
-     *   test_name?: string,
-     *   type?: string,
-     *   hex: string,
-     *   meta?: array<mixed>
-     * }>
+     * @return list<TxRecord>
      */
-    public static function loadTransactions(string $path): array
+    public static function loadTransactions(string $jsonPath): array
     {
-        if (!is_file($path)) {
-            throw new \RuntimeException("transactions.json not found: {$path}");
+        if (!\file_exists($jsonPath)) {
+            throw new \RuntimeException("Vector not found: {$jsonPath}");
         }
-        $raw = file_get_contents($path);
-        if ($raw === false) {
-            throw new \RuntimeException("cannot read: {$path}");
-        }
-
-        /** @var mixed $data */
-        $data = json_decode($raw, true);
-        if (!is_array($data)) {
-            throw new \RuntimeException('invalid transactions.json (not array)');
+        $json = \file_get_contents($jsonPath);
+        if ($json === false) {
+            throw new \RuntimeException("Failed to read: {$jsonPath}");
         }
 
-        /** @var list<array{
-         *   schema_name?: string,
-         *   test_name?: string,
-         *   type?: string,
-         *   hex: string,
-         *   meta?: array<mixed>
-         * }> $items
-         */
-        $items = [];
-        self::collectRecords($data, $items);
-        return $items;
+        /** @var mixed $decoded */
+        $decoded = \json_decode($json, true);
+        if ($decoded === null && \json_last_error() !== \JSON_ERROR_NONE) {
+            throw new \RuntimeException("Invalid JSON: {$jsonPath}");
+        }
+
+        /** @var list<TxRecord> $out */
+        $out = [];
+        self::collectRecords($out, $decoded);
+        return $out;
     }
 
     /**
-     * 再帰的に走査して「トランザクション1件」っぽいオブジェクトを収集する。
+     * 深さ優先で TxRecord を抽出して $out に追記する。
      *
-     * @param array<mixed> $node
-     * @param list<array{
-     *   schema_name?: string,
-     *   test_name?: string,
-     *   type?: string,
-     *   hex: string,
-     *   meta?: array<mixed>
-     * }> $out
-     * @return void
+     * @param list<TxRecord> $out  ここにレコードを push していく（参照渡し）
+     * @param mixed          $node
      */
-    private static function collectRecords(array $node, array &$out): void
+    private static function collectRecords(array &$out, mixed $node): void
     {
-        if (self::looksLikeTxRecord($node)) {
-            $out[] = [
-                'schema_name' => isset($node['schema_name']) && is_string($node['schema_name']) ? $node['schema_name'] : null,
-                'test_name'   => isset($node['test_name']) && is_string($node['test_name']) ? $node['test_name'] : null,
-                'type'        => isset($node['type']) && is_string($node['type']) ? $node['type'] : null,
-                'hex'         => self::extractHex($node),
-                'meta'        => isset($node['meta']) && is_array($node['meta']) ? $node['meta'] : [],
-            ];
+        /** @var list<TxRecord> $out */ // list であることを固定
+        // レコード形（最低限 hex を持つ）
+        if (\is_array($node) && \array_key_exists('hex', $node) && \is_string($node['hex'])) {
+            /** @var TxRecord $record */
+            $record = ['hex' => $node['hex']];
+            if (isset($node['schema_name']) && \is_string($node['schema_name'])) {
+                $record['schema_name'] = $node['schema_name'];
+            }
+            if (isset($node['test_name']) && \is_string($node['test_name'])) {
+                $record['test_name'] = $node['test_name'];
+            }
+            if (isset($node['type']) && \is_string($node['type'])) {
+                $record['type'] = $node['type'];
+            }
+            if (isset($node['meta']) && \is_array($node['meta'])) {
+                /** @var array<mixed> $meta */
+                $meta = $node['meta'];
+                $record['meta'] = $meta;
+            }
+
+            $out[] = $record; // list<TxRecord> に push
             return;
         }
 
-        foreach ($node as $v) {
-            if (is_array($v)) {
-                self::collectRecords($v, $out);
+        // 配列 or 連想配列なら子要素を辿る
+        if (\is_array($node)) {
+            foreach ($node as $child) {
+                self::collectRecords($out, $child);
             }
         }
     }
 
-    /** @param array<mixed> $rec */
-    private static function looksLikeTxRecord(array $rec): bool
-    {
-        return is_array($rec)
-            && (
-                array_key_exists('hex', $rec)
-                || array_key_exists('payload', $rec)
-                || array_key_exists('serialized', $rec)
-            );
-    }
-
     /**
-     * @param array<mixed> $rec
-     * @return string
+     * @param list<TxRecord> $records
+     * @return list<TxRecord>
      */
-    private static function extractHex(array $rec): string
+    public static function filterBySchemaContains(array $records, string $needle): array
     {
-        foreach (['hex', 'payload', 'serialized'] as $k) {
-            if (isset($rec[$k]) && is_string($rec[$k])) {
-                return strtolower(preg_replace('/[^0-9a-f]/i', '', $rec[$k]) ?? '');
+        $needleLower = \strtolower($needle);
+        $out = [];
+        foreach ($records as $r) {
+            $schema = $r['schema_name'] ?? null;
+            if ($schema !== null && \str_contains(\strtolower($schema), $needleLower)) {
+                $out[] = $r;
             }
         }
-        throw new \RuntimeException('No hex-like field found in record');
+        /** @var list<TxRecord> $out */
+        return $out;
     }
 
     /**
-     * schema_name に部分一致するレコードを抽出。
-     *
-     * @param list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}> $recs
-     * @return list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}>
+     * @param list<TxRecord> $records
+     * @return list<TxRecord>
      */
-    public static function filterBySchemaContains(array $recs, string $needle): array
+    public static function filterBySchemaEquals(array $records, string $schemaName): array
     {
-        $needle = strtolower($needle);
-        return array_values(array_filter($recs, static function ($r) use ($needle) {
-            $schema = strtolower((string)($r['schema_name'] ?? ''));
-            return $schema !== '' && str_contains($schema, $needle);
-        }));
+        $out = [];
+        foreach ($records as $r) {
+            if (($r['schema_name'] ?? null) === $schemaName) {
+                $out[] = $r;
+            }
+        }
+        /** @var list<TxRecord> $out */
+        return $out;
     }
 
     /**
-     * schema_name が完全一致するレコードを抽出。
-     *
-     * @param list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}> $recs
-     * @return list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}>
+     * @param list<TxRecord> $records
+     * @return list<TxRecord>
      */
-    public static function filterBySchemaEquals(array $recs, string $exact): array
+    public static function filterByTestNameContains(array $records, string $needle): array
     {
-        return array_values(array_filter($recs, static fn($r) =>
-            isset($r['schema_name']) && $r['schema_name'] === $exact
-        ));
+        $needleLower = \strtolower($needle);
+        $out = [];
+        foreach ($records as $r) {
+            $name = $r['test_name'] ?? null;
+            if ($name !== null && \str_contains(\strtolower($name), $needleLower)) {
+                $out[] = $r;
+            }
+        }
+        /** @var list<TxRecord> $out */
+        return $out;
     }
 
     /**
-     * test_name に部分一致するレコードを抽出。
-     *
-     * @param list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}> $recs
-     * @return list<array{schema_name?:string,test_name?:string,type?:string,hex:string,meta?:array<mixed>}>
+     * @template T
+     * @param list<TxRecord> $records
+     * @param callable(TxRecord): T $fn
+     * @return list<T>
      */
-    public static function filterByTestNameContains(array $recs, string $needle): array
+    public static function walk(array $records, callable $fn): array
     {
-        $needle = strtolower($needle);
-        return array_values(array_filter($recs, static function ($r) use ($needle) {
-            $name = strtolower((string)($r['test_name'] ?? ''));
-            return $name !== '' && str_contains($name, $needle);
-        }));
+        $out = [];
+        foreach ($records as $r) {
+            $out[] = $fn($r);
+        }
+        /** @var list<T> $out */
+        return $out;
     }
 }

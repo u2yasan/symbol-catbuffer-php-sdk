@@ -9,63 +9,66 @@ use SymbolSdk\Transaction\TransferTransaction;
 
 final class TransferFromJsonVectorsTest extends TestCase
 {
-    public function testVectorsPresence(): void
-    {
-        $path = __DIR__ . '/../vectors/symbol/models/transactions.json';
-        if (!is_file($path)) {
-            $this->markTestSkipped('transactions.json not found at ' . $path);
-        }
-
-        $recs = Vectors::loadTransactions($path);
-        $trs  = Vectors::filterBySchemaContains($recs, 'TransferTransaction');
-        if (!$trs) {
-            $this->markTestSkipped('No transfer vectors found in transactions.json');
-        }
-
-        $this->assertTrue(true);
-    }
-
     /**
-     * @return array<string, array{hex: string}>
+     * @return array<string, array{hex: string, name: string}|array{__skip__: true}>
      */
-    public static function providerTransfer(): array
+    public static function providerVectors(): array
     {
-        $path = __DIR__ . '/../vectors/symbol/models/transactions.json';
-        if (!is_file($path)) {
-            return ['__none__' => ['hex' => '']];
+        $jsonPath = \dirname(__DIR__) . '/vectors/symbol/models/transactions.json';
+        if (!\file_exists($jsonPath)) {
+            return ['__skip__' => ['__skip__' => true]];
         }
 
-        $recs = Vectors::loadTransactions($path);
-        $trs  = Vectors::filterBySchemaContains($recs, 'TransferTransaction');
+        $all    = Vectors::loadTransactions($jsonPath);
+        $picked = Vectors::filterBySchemaEquals($all, 'TransferTransactionV1');
 
+        /** @var array<string, array{hex: string, name: string}> $out */
         $out = [];
-        foreach ($trs as $i => $rec) {
-            /** @var string $hex */
-            $hex = $rec['hex'];
-            if ($hex !== '') {
-                $out["transfer_$i"] = ['hex' => $hex];
+        foreach ($picked as $i => $rec) {
+            // Vectors 側で hex は必ず string として格納される前提
+            $hex  = $rec['hex'];
+            $name = $rec['test_name'] ?? null;
+            if ($name === null) {
+                $name = 'transfer_' . (string) $i;
             }
+
+            if (\preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+                continue;
+            }
+
+            $out[$name] = [ ['hex' => $hex, 'name' => $name] ];
         }
-        return $out ?: ['__none__' => ['hex' => '']];
+
+        if (\count($out) === 0) {
+            return ['__skip__' => [ ['__skip__' => true] ]];
+        }
+        return $out;
     }
 
     /**
-     * @dataProvider providerTransfer
+     * @dataProvider providerVectors
+     * @param array{hex: string, name: string}|array{__skip__: true} $case
      */
-    public function testRoundTrip(string $hex): void
+    public function testRoundTrip(array $case): void
     {
-        if ($hex === '') {
-            $this->markTestSkipped('No transfer vectors present');
+        if (isset($case['__skip__'])) {
+            self::markTestSkipped('No transfer vectors found.');
         }
 
-        $bin = hex2bin($hex);
+        /** @var array{hex: string, name: string} $case */
+        $hex = $case['hex'];
+        if ((\strlen($hex) % 2) !== 0 || \preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+            self::markTestSkipped('Invalid hex vector: ' . $case['name']);
+        }
+
+        $bin = \hex2bin($hex);
         if ($bin === false) {
-            $this->markTestSkipped('Invalid hex in vectors');
+            self::markTestSkipped('hex2bin failed: ' . $case['name']);
         }
 
-        $tx = TransferTransaction::fromBinary($bin);
-        $re = $tx->serialize();
+        $tx  = TransferTransaction::fromBinary($bin);
+        $out = $tx->serialize();
 
-        $this->assertSame($hex, bin2hex($re));
+        self::assertSame(\strtolower($hex), \strtolower(\bin2hex($out)), 'Re-encoded hex must equal original: ' . $case['name']);
     }
 }

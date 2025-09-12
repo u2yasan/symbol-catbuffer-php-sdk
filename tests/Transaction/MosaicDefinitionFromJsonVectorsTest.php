@@ -9,64 +9,67 @@ use SymbolSdk\Transaction\MosaicDefinitionTransaction;
 
 final class MosaicDefinitionFromJsonVectorsTest extends TestCase
 {
-    public function testVectorsPresence(): void
-    {
-        $path = __DIR__ . '/../vectors/symbol/models/transactions.json';
-        if (!is_file($path)) {
-            $this->markTestSkipped('transactions.json not found at ' . $path);
-        }
-
-        $recs = Vectors::loadTransactions($path);
-        $mrs  = Vectors::filterBySchemaContains($recs, 'MosaicDefinitionTransaction');
-        if (!$mrs) {
-            $this->markTestSkipped('No mosaic definition vectors found in transactions.json');
-        }
-
-        $this->assertTrue(true);
-    }
-
     /**
-     * @return array<string, array{hex: string}>
+     * @return array<string, array{hex:string, name:string}|array{__skip__:true}>
      */
-    public static function providerMosaicDefinition(): array
+    public static function providerVectors(): array
     {
-        $path = __DIR__ . '/../vectors/symbol/models/transactions.json';
-        if (!is_file($path)) {
-            return ['__none__' => ['hex' => '']];
+        $jsonPath = \dirname(__DIR__) . '/vectors/symbol/models/transactions.json';
+        if (!\file_exists($jsonPath)) {
+            // ベクタ未配置ならセンチネルのみ
+            return ['__skip__' => ['__skip__' => true]];
         }
 
-        $recs = Vectors::loadTransactions($path);
-        $mrs  = Vectors::filterBySchemaContains($recs, 'MosaicDefinitionTransaction');
+        $all    = Vectors::loadTransactions($jsonPath);
+        $picked = Vectors::filterBySchemaEquals($all, 'MosaicDefinitionTransactionV1');
 
+        /** @var array<string, array{hex:string, name:string}> $out */
         $out = [];
-        foreach ($mrs as $i => $rec) {
-            // Vectors の注釈で hex は常に string
-            /** @var string $hex */
-            $hex = $rec['hex'];
-            if ($hex !== '') {
-                $out["mosaicdef_$i"] = ['hex' => $hex];
+        foreach ($picked as $i => $rec) {
+            $hex  = $rec['hex'];
+            $name = $rec['test_name'] ?? ('mosaicdef_' . (string) $i);
+
+            // 軽い HEX 妥当性（偶数桁は本体で確認）
+            if (\preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+                continue;
             }
+
+            $out[$name] = [ ['hex' => $hex, 'name' => $name] ];
         }
-        return $out ?: ['__none__' => ['hex' => '']];
+
+        if (\count($out) === 0) {
+            return ['__skip__' => [ ['__skip__' => true] ]];
+        }
+        return $out;
     }
 
     /**
-     * @dataProvider providerMosaicDefinition
+     * @dataProvider providerVectors
+     * @param array{hex:string, name:string}|array{__skip__:true} $case
      */
-    public function testRoundTrip(string $hex): void
+    public function testRoundTrip(array $case): void
     {
-        if ($hex === '') {
-            $this->markTestSkipped('No mosaic definition vectors present');
+        if (isset($case['__skip__'])) {
+            self::markTestSkipped('No mosaic definition vectors found.');
         }
 
-        $bin = hex2bin($hex);
+        // ここからは hex/name ケースのみ
+        /** @var array{hex:string, name:string} $case */
+        $hex = $case['hex'];
+
+        // 偶数桁の HEX を要求
+        if ((\strlen($hex) % 2) !== 0 || \preg_match('/^[0-9a-fA-F]+$/', $hex) !== 1) {
+            self::markTestSkipped('Invalid hex vector: ' . $case['name']);
+        }
+
+        $bin = \hex2bin($hex);
         if ($bin === false) {
-            $this->markTestSkipped('Invalid hex in vectors');
+            self::markTestSkipped('hex2bin failed: ' . $case['name']);
         }
 
-        $tx = MosaicDefinitionTransaction::fromBinary($bin);
-        $re = $tx->serialize();
+        $tx  = MosaicDefinitionTransaction::fromBinary($bin);
+        $out = $tx->serialize();
 
-        $this->assertSame($hex, bin2hex($re));
+        self::assertSame(\strtolower($hex), \strtolower(\bin2hex($out)), 'Re-encoded hex must equal original: ' . $case['name']);
     }
 }

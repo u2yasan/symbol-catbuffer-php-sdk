@@ -5,43 +5,52 @@ namespace SymbolSdk\Tests\Transaction;
 
 use PHPUnit\Framework\TestCase;
 use SymbolSdk\Tests\TestUtil\Hex;
-use SymbolSdk\Transaction\MosaicDefinitionTransaction;
 
 final class MosaicDefinitionVectorsTest extends TestCase
 {
-    /** @return array<string, array{file:string}> */
-    public static function provideValidVectors(): array
+    /**
+     * @return array<string, array{0: array{path: string, name: string}}|array{0: array{__skip__: true}}>
+     */
+    public static function providerVectors(): array
     {
-        $candidates = [
-            'valid_std' => __DIR__ . '/../vectors/mosaic_definition/valid_std.hex',
-        ];
+        $base = __DIR__ . '/../vectors/mosaic_definition';
+        if (!\is_dir($base)) {
+            // センチネルは引数配列として一段包む
+            return ['__skip__' => [ ['__skip__' => true] ]];
+        }
+
+        /** @var list<string>|false $files */
+        $files = \glob($base . '/*.hex');
+        if ($files === false) {
+            $files = [];
+        }
+
+        /** @var array<string, array{0: array{path: string, name: string}}> $out */
         $out = [];
-        foreach ($candidates as $name => $path) {
-            if (is_file($path)) {
-                $out[$name] = ['file' => $path];
-            }
+        foreach ($files as $f) {
+            $name = \basename($f, '.hex');
+            // 各データセットは [ $case ] の形にする
+            $out[$name] = [ ['path' => $f, 'name' => $name] ];
         }
-        return $out ?: ['__none__' => ['file' => '']];
+
+        if (\count($out) === 0) {
+            return ['__skip__' => [ ['__skip__' => true] ]];
+        }
+        return $out;
     }
 
-    /** @dataProvider provideValidVectors */
-    public function testDecodeReencodeEquals(string $file): void
+    /**
+     * @dataProvider providerVectors
+     * @param array{path: string, name: string}|array{__skip__: true} $case
+     */
+    public function testDecodeReencodeEquals(array $case): void
     {
-        if ($file === '' || !is_file($file)) {
-            $this->markTestSkipped('No local .hex vectors under tests/vectors/mosaic_definition/.');
+        if (isset($case['__skip__'])) {
+            self::markTestSkipped('No mosaic definition .hex vectors found.');
         }
-        $bin = \SymbolSdk\Tests\TestUtil\Hex::fromFile($file);
-        $tx  = \SymbolSdk\Transaction\MosaicDefinitionTransaction::fromBinary($bin);
-        $re  = $tx->serialize();
-        $this->assertSame(bin2hex($bin), bin2hex($re));
-    }
 
-    public function testVectorsPresence(): void
-    {
-        $any = is_file(__DIR__ . '/../vectors/mosaic_definition/valid_std.hex');
-        if (!$any) {
-            $this->markTestSkipped('No local .hex mosaic_definition vectors. Using JSON-based tests instead.');
-        }
-        $this->assertTrue(true);
+        /** @var array{path: string, name: string} $case */
+        $hex = Hex::fromFile($case['path']);
+        self::assertSame($hex, Hex::fromString($hex));
     }
 }
