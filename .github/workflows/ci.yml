@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 on:
   push:
@@ -16,13 +16,10 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          tools: composer:v2, php-cs-fixer, phpstan
           coverage: none
-          tools: composer
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist
-      - name: Code Style (dry-run)
-        run: composer check:cs
-      - name: Static Analysis
-        run: composer analyse
-      - name: Tests
-        run: composer test
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer analyse
+      - run: composer test
+      # フォーマットは任意（落ちないように結果だけ見たいなら --dry-run）
+      - run: composer check:cs
