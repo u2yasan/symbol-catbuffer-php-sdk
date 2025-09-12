@@ -1,20 +1,41 @@
 <?php
 declare(strict_types=1);
+
 namespace SymbolSdk\Transaction;
 
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * TransferTransaction
+ * - 共通ヘッダ128B対応
+ * - body: recipient(24) / messageSize(u16) / mosaicsCount(u8) / reserved(u8) / mosaics[] / message(type+payload)
+ * - u64 は 10進文字列 (…Dec) で保持
+ *
+ * 依存:
+ * - 親 AbstractTransaction の parseHeader / readU16LEAt / readU32LEAt / readU64LEDecAt / u64LE / serialize() を使用
+ */
 final class TransferTransaction extends AbstractTransaction
 {
-    public readonly string $recipientAddress;
+    /** @var string 受信者 UnresolvedAddress（24バイト固定） */
+    private string $recipient;
+
     /** @var list<array{mosaicIdDec:string, amountDec:string}> */
-    public readonly array $mosaics;
-    public readonly string $message;
+    private array $mosaics;
+
+    /** @var int MessageType (0..255) */
+    private int $messageType;
+
+    /** @var string メッセージのペイロード（生バイト列） */
+    private string $message;
 
     /**
      * @param list<array{mosaicIdDec:string, amountDec:string}> $mosaics
      */
     public function __construct(
-        string $recipientAddress,
+        string $recipient,
         array $mosaics,
+        int $messageType,
         string $message,
         string $headerRaw,
         int $size,
@@ -24,119 +45,130 @@ final class TransferTransaction extends AbstractTransaction
         string $maxFeeDec,
         string $deadlineDec
     ) {
-        if (strlen($recipientAddress) !== 24) {
-            throw new \InvalidArgumentException('recipientAddress must be 24 bytes');
+        if (strlen($recipient) !== 24) {
+            throw new InvalidArgumentException('recipient must be 24 bytes (UnresolvedAddress)');
         }
-        if (strlen($message) > 65535) {
-            throw new \InvalidArgumentException('message too long (max 65535)');
+        if ($messageType < 0 || $messageType > 255) {
+            throw new InvalidArgumentException('messageType must be 0..255');
         }
-        if (count($mosaics) > 255) {
-            throw new \InvalidArgumentException('mosaics count exceeds 255');
-        }
-        /** @var list<array{mosaicIdDec:string, amountDec:string}> $mosaics */
-        $ids = [];
+
+        // mosaics の型&値域を正規化（param で list<array{mosaicIdDec:string, amountDec:string}> を受領しているため
+        // array_values() や isset() は不要。長さ・形式のみ検証する）
+        /** @var list<array{mosaicIdDec:string, amountDec:string}> $normalized */
+        $normalized = [];
         foreach ($mosaics as $i => $mosaic) {
-            // 値が文字列かつ 10進数のみ（u64 の decimal-string）を検証
-            $id  = $mosaic['mosaicIdDec'];
+            $mid = $mosaic['mosaicIdDec'];
             $amt = $mosaic['amountDec'];
 
-            if (!is_string($id) || $id === '' || !preg_match('/^\d+$/', $id)) {
-                throw new \InvalidArgumentException("mosaics[$i].mosaicIdDec must be a non-empty decimal string");
+            if (preg_match('/^[0-9]+$/', $mid) !== 1) {
+                throw new InvalidArgumentException("mosaics[$i].mosaicIdDec must be decimal string");
             }
-            if (!is_string($amt) || $amt === '' || !preg_match('/^\d+$/', $amt)) {
-                throw new \InvalidArgumentException("mosaics[$i].amountDec must be a non-empty decimal string");
+            if (preg_match('/^[0-9]+$/', $amt) !== 1) {
+                throw new InvalidArgumentException("mosaics[$i].amountDec must be decimal string");
             }
-
-            // 重複ID検出（こちらの isset は OK：$ids はこの関数内で作るマップなので可）
-            if (isset($ids[$id])) {
-                throw new \InvalidArgumentException("Duplicate mosaicIdDec in mosaics: {$id}");
-            }
-            $ids[$id] = true;
+            $mid = ltrim($mid, '0') === '' ? '0' : ltrim($mid, '0');
+            $amt = ltrim($amt, '0') === '' ? '0' : ltrim($amt, '0');
+            $normalized[] = ['mosaicIdDec' => $mid, 'amountDec' => $amt];
         }
-        $this->recipientAddress = $recipientAddress;
-        /** @var list<array{mosaicIdDec:string, amountDec:string}> $mosaics */
-        $this->mosaics = $mosaics;
-        $this->message = $message;
+
+        if (strlen($message) > 0xFFFF - 1) { // messageSize = 1(type) + payload
+            throw new InvalidArgumentException('message payload too large (max 65534 bytes)');
+        }
+
         parent::__construct($headerRaw, $size, $version, $network, $type, $maxFeeDec, $deadlineDec);
+
+        $this->recipient   = $recipient;
+        $this->mosaics     = $normalized;
+        $this->messageType = $messageType;
+        $this->message     = $message;
     }
 
+    /**
+     * ヘッダ＋ボディの完全なバイナリから復元
+     */
     public static function fromBinary(string $binary): self
     {
-        $h = self::parseHeader($binary);
-        $off = $h['offset'];
-        $len = strlen($binary);
+        $h      = self::parseHeader($binary);
+        $offset = $h['offset'];
+        $len    = strlen($binary);
 
-        // recipient_address: 24 bytes
-        if ($len - $off < 24) {
-            throw new \RuntimeException('Unexpected EOF: need 24 bytes for recipientAddress');
+        // 最低限必要: recipient(24) + messageSize(2) + mosaicsCount(1) + reserved(1)
+        if ($len < $offset + 24 + 2 + 1 + 1) {
+            $need = ($offset + 28) - $len;
+            throw new RuntimeException("Unexpected EOF while reading Transfer body header: need {$need} more bytes");
         }
-        $recipientAddress = substr($binary, $off, 24);
-        $off += 24;
 
-        // message_size: uint16 LE
-        if ($len - $off < 2) {
-            throw new \RuntimeException('Unexpected EOF: need 2 bytes for message_size');
+        // recipient (24)
+        $recipient = substr($binary, $offset, 24);
+        if (strlen($recipient) !== 24) {
+            throw new RuntimeException('Unexpected EOF while reading recipient');
         }
-        $chunk = substr($binary, $off, 2);
-        $u = unpack('vsize', $chunk);
-        if ($u === false) {
-            throw new \RuntimeException('unpack failed for message_size');
-        }
-        /** @var array{size:int} $u */
-        $messageSize = $u['size'];
-        $off += 2;
+        $offset += 24;
 
-        // mosaics_count: uint8
-        if ($len - $off < 1) {
-            throw new \RuntimeException('Unexpected EOF: need 1 byte for mosaics_count');
-        }
-        $mosaicsCount = ord($binary[$off]);
-        $off += 1;
+        // messageSize (u16 LE)
+        $messageSize = self::readU16LEAt($binary, $offset);
+        $offset += 2;
 
-        // reserved1: uint8
-        if ($len - $off < 1) {
-            throw new \RuntimeException('Unexpected EOF: need 1 byte for reserved1');
-        }
-        $off += 1;
+        // mosaicsCount (u8)
+        $mosaicsCount = ord($binary[$offset]);
+        $offset += 1;
 
-        // reserved2: uint32
-        if ($len - $off < 4) {
-            throw new \RuntimeException('Unexpected EOF: need 4 bytes for reserved2');
-        }
-        $off += 4;
+        // reserved (u8) skip
+        $offset += 1;
 
-        // mosaics: array of {id:u64, amount:u64}
+        // mosaics
         /** @var list<array{mosaicIdDec:string, amountDec:string}> $mosaics */
         $mosaics = [];
-        $ids = [];
         for ($i = 0; $i < $mosaicsCount; $i++) {
-            if ($len - $off < 16) {
-                throw new \RuntimeException("Unexpected EOF: need 16 bytes for mosaic[$i]");
+            // 各要素: UnresolvedMosaicId(u64) + amount(u64)
+            if ($len < $offset + 16) {
+                $need = ($offset + 16) - $len;
+                throw new RuntimeException("Unexpected EOF while reading mosaic[$i]: need {$need} more bytes");
             }
-            $mosaicIdDec = self::u64DecAt($binary, $off);
-            $amountDec = self::u64DecAt($binary, $off + 8);
-            if (isset($ids[$mosaicIdDec])) {
-                throw new \InvalidArgumentException("Duplicate mosaicIdDec in mosaics: {$mosaicIdDec}");
+            $mosaicIdDec = self::readU64LEDecAt($binary, $offset);
+            $offset += 8;
+            $amountDec   = self::readU64LEDecAt($binary, $offset);
+            $offset += 8;
+
+            if (preg_match('/^[0-9]+$/', $mosaicIdDec) !== 1) {
+                throw new RuntimeException("mosaics[$i].mosaicIdDec must be decimal string");
             }
-            $ids[$mosaicIdDec] = true;
-            $mosaics[] = [
-                'mosaicIdDec' => $mosaicIdDec,
-                'amountDec' => $amountDec,
-            ];
-            $off += 16;
+            if (preg_match('/^[0-9]+$/', $amountDec) !== 1) {
+                throw new RuntimeException("mosaics[$i].amountDec must be decimal string");
+            }
+            $mid = ltrim($mosaicIdDec, '0') === '' ? '0' : ltrim($mosaicIdDec, '0');
+            $amt = ltrim($amountDec,   '0') === '' ? '0' : ltrim($amountDec,   '0');
+            $mosaics[] = ['mosaicIdDec' => $mid, 'amountDec' => $amt];
         }
 
-        // message: messageSize bytes
-        if ($len - $off < $messageSize) {
-            throw new \RuntimeException("Unexpected EOF: need {$messageSize} bytes for message");
+        // message: size は type(1) + payload(n)
+        if ($messageSize === 0) {
+            $messageType = 0;
+            $payload     = '';
+        } else {
+            if ($len < $offset + $messageSize) {
+                $need = ($offset + $messageSize) - $len;
+                throw new RuntimeException("Unexpected EOF while reading message: need {$need} more bytes");
+            }
+            $messageType = ord($binary[$offset]);
+            $offset += 1;
+            $payloadLen = $messageSize - 1;
+            if ($payloadLen > 0) {
+                $payload = substr($binary, $offset, $payloadLen);
+                if (strlen($payload) !== $payloadLen) {
+                    throw new RuntimeException('Unexpected EOF while slicing message payload');
+                }
+                $offset += $payloadLen;
+            } else {
+                $payload = '';
+            }
         }
-        $message = substr($binary, $off, $messageSize);
-        $off += $messageSize;
 
         return new self(
-            $recipientAddress,
+            $recipient,
             $mosaics,
-            $message,
+            $messageType,
+            $payload,
             $h['headerRaw'],
             $h['size'],
             $h['version'],
@@ -148,51 +180,43 @@ final class TransferTransaction extends AbstractTransaction
     }
 
     /**
-     * @return string
+     * ボディ直列化（ヘッダは親が前置）
      */
     protected function encodeBody(): string
     {
-        $out = $this->recipientAddress;
-        $messageLen = strlen($this->message);
-        if ($messageLen > 65535) {
-            throw new \InvalidArgumentException('message too long (max 65535)');
-        }
-        $out .= pack('v', $messageLen);
+        $out = '';
+        $out .= $this->recipient;
 
-        $mosaicsCount = count($this->mosaics);
-        if ($mosaicsCount > 255) {
-            throw new \InvalidArgumentException('mosaics count exceeds 255');
+        $payload = $this->message;
+        $msgSize = 1 + strlen($payload);
+        if ($msgSize > 0xFFFF) {
+            throw new \LogicException('message payload too large');
         }
-        $out .= chr($mosaicsCount);
-
-        // reserved1: uint8 (0)
+        // messageSize (u16 LE)
+        $out .= pack('v', $msgSize);
+        // mosaicsCount (u8)
+        $out .= chr(count($this->mosaics));
+        // reserved (u8)
         $out .= "\x00";
-        // reserved2: uint32 (0)
-        $out .= "\x00\x00\x00\x00";
 
-        $ids = [];
+        // mosaics
         foreach ($this->mosaics as $i => $mosaic) {
-            $mosaicIdDec = $mosaic['mosaicIdDec'];
-            $amountDec = $mosaic['amountDec'];
-            if (isset($ids[$mosaicIdDec])) {
-                throw new \InvalidArgumentException("Duplicate mosaicIdDec in mosaics: {$mosaicIdDec}");
+            $mid = $mosaic['mosaicIdDec'];
+            $amt = $mosaic['amountDec'];
+            if (preg_match('/^[0-9]+$/', $mid) !== 1) {
+                throw new \LogicException("mosaics[$i].mosaicIdDec must be decimal string");
             }
-            $ids[$mosaicIdDec] = true;
-            $out .= self::u64LE($mosaicIdDec);
-            $out .= self::u64LE($amountDec);
+            if (preg_match('/^[0-9]+$/', $amt) !== 1) {
+                throw new \LogicException("mosaics[$i].amountDec must be decimal string");
+            }
+            $out .= self::u64LE($mid);
+            $out .= self::u64LE($amt);
         }
-        $out .= $this->message;
-        return $out;
-    }
 
-    /**
-     * @param string $binary
-     * @param int $offset
-     * @return array<string,mixed>
-     */
-    protected static function decodeBody(string $binary, int $offset): array
-    {
-        // Not used in this implementation.
-        return [];
+        // message (type + payload)
+        $out .= chr($this->messageType);
+        $out .= $payload;
+
+        return $out;
     }
 }

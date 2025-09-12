@@ -7,20 +7,16 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * AggregateCompleteTransaction
+ * AggregateBondedTransaction
  * - 共通ヘッダ128B対応
  * - cosignatures 付き
- *
- * 注意:
- *  - 親 AbstractTransaction の readU16LEAt / readU32LEAt / readU64LEDecAt / u64LE を再定義しない
- *  - 型宣言済み引数に対する is_string / is_int チェックは行わない（PHPStan 用）
  */
-final class AggregateCompleteTransaction extends AbstractTransaction
+class AggregateBondedTransaction extends AbstractTransaction
 {
     /** @var string 署名者公開鍵（32B） */
     private string $signerPublicKey;
 
-    /** @var int バージョン（0..255想定） */
+    /** @var int バージョン */
     private int $ver;
 
     /** @var string ペイロードハッシュ（32B） */
@@ -49,7 +45,6 @@ final class AggregateCompleteTransaction extends AbstractTransaction
         string $maxFeeDec,
         string $deadlineDec
     ) {
-        // 値域チェックのみ（型は宣言で保証）
         if (strlen($signerPublicKey) !== 32) {
             throw new InvalidArgumentException('signerPublicKey must be 32 bytes');
         }
@@ -63,7 +58,8 @@ final class AggregateCompleteTransaction extends AbstractTransaction
             throw new InvalidArgumentException('merkleHash must be 32 bytes');
         }
 
-        // cosignatures は list<shape> 前提。実行時は長さのみ検証。
+        // $cosignatures は @param list<array{signerPublicKey:string, signature:string}> で受領済み。
+        // 実行時は長さのみ検証し、list と shape は PHPDoc/静的解析に委ねる。
         /** @var list<array{signerPublicKey:string, signature:string}> $normalized */
         $normalized = [];
         foreach ($cosignatures as $i => $item) {
@@ -95,14 +91,9 @@ final class AggregateCompleteTransaction extends AbstractTransaction
         $h = self::parseHeader($binary);
         $offset = $h['offset'];
 
-        $len = strlen($binary);
-        if ($len < $offset + 32 + 1 + 32 + 32 + 4) {
-            throw new RuntimeException('Unexpected EOF while reading AggregateCompleteTransaction');
-        }
-
         $signerPublicKey = substr($binary, $offset, 32);
         if (strlen($signerPublicKey) !== 32) {
-            throw new RuntimeException('Unexpected EOF while reading signerPublicKey');
+            throw new RuntimeException("Unexpected EOF while reading signerPublicKey");
         }
         $offset += 32;
 
@@ -111,13 +102,13 @@ final class AggregateCompleteTransaction extends AbstractTransaction
 
         $payloadHash = substr($binary, $offset, 32);
         if (strlen($payloadHash) !== 32) {
-            throw new RuntimeException('Unexpected EOF while reading payloadHash');
+            throw new RuntimeException("Unexpected EOF while reading payloadHash");
         }
         $offset += 32;
 
         $merkleHash = substr($binary, $offset, 32);
         if (strlen($merkleHash) !== 32) {
-            throw new RuntimeException('Unexpected EOF while reading merkleHash');
+            throw new RuntimeException("Unexpected EOF while reading merkleHash");
         }
         $offset += 32;
 
@@ -128,18 +119,15 @@ final class AggregateCompleteTransaction extends AbstractTransaction
         /** @var list<array{signerPublicKey:string, signature:string}> $cosignatures */
         $cosignatures = [];
         for ($i = 0; $i < $cosigCount; $i++) {
-            if ($len < $offset + 32 + 64) {
-                throw new RuntimeException("Unexpected EOF in cosignature[$i]");
-            }
             $pub = substr($binary, $offset, 32);
             if (strlen($pub) !== 32) {
-                throw new RuntimeException("Unexpected EOF in cosignature[$i] pubkey");
+                throw new RuntimeException("Unexpected EOF in cosignature pubkey");
             }
             $offset += 32;
 
             $sig = substr($binary, $offset, 64);
             if (strlen($sig) !== 64) {
-                throw new RuntimeException("Unexpected EOF in cosignature[$i] signature");
+                throw new RuntimeException("Unexpected EOF in cosignature signature");
             }
             $offset += 64;
 
@@ -181,7 +169,4 @@ final class AggregateCompleteTransaction extends AbstractTransaction
 
         return $out;
     }
-
-    // 親の readU16LEAt / readU32LEAt / readU64LEDecAt / u64LE を使用する。
-    // このクラスでの再定義は行わない（可視性違反や mixed 返り値の原因になる）。
 }

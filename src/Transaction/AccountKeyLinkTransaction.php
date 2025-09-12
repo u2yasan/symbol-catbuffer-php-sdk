@@ -1,5 +1,7 @@
 <?php
+
 declare(strict_types=1);
+
 namespace SymbolSdk\Transaction;
 
 final class AccountKeyLinkTransaction extends AbstractTransaction
@@ -10,12 +12,13 @@ final class AccountKeyLinkTransaction extends AbstractTransaction
     public function __construct(
         string $linkedPublicKey,
         int $linkAction,
-        string $headerRaw, int $size, int $version, int $network, int $type, string $maxFeeDec, string $deadlineDec
+        string $headerRaw, int $size, int $version, int $network, int $type, string $maxFeeDec, string $deadlineDec,
     ) {
-        if (strlen($linkedPublicKey) !== 32) {
+        if (32 !== \strlen($linkedPublicKey)) {
             throw new \InvalidArgumentException('linkedPublicKey must be 32 bytes');
         }
-        if ($linkAction !== 0 && $linkAction !== 1) {
+
+        if (0 !== $linkAction && 1 !== $linkAction) {
             throw new \InvalidArgumentException('linkAction must be 0 or 1');
         }
         $this->linkedPublicKey = $linkedPublicKey;
@@ -27,22 +30,25 @@ final class AccountKeyLinkTransaction extends AbstractTransaction
     {
         $h = self::parseHeader($binary);
         $offset = $h['offset'];
-        $len = strlen($binary);
+        $len = \strlen($binary);
 
         $need = 32;
+
         if ($len - $offset < $need) {
-            throw new \RuntimeException("Unexpected EOF: need {$need} bytes for linkedPublicKey, have " . ($len - $offset));
+            throw new \RuntimeException("Unexpected EOF: need {$need} bytes for linkedPublicKey, have ".($len - $offset));
         }
-        $linkedPublicKey = substr($binary, $offset, 32);
+        $linkedPublicKey = \substr($binary, $offset, 32);
         $offset += 32;
 
         $need = 1;
+
         if ($len - $offset < $need) {
-            throw new \RuntimeException("Unexpected EOF: need {$need} byte for linkAction, have " . ($len - $offset));
+            throw new \RuntimeException("Unexpected EOF: need {$need} byte for linkAction, have ".($len - $offset));
         }
-        $linkAction = ord($binary[$offset]);
-        $offset += 1;
-        if ($linkAction !== 0 && $linkAction !== 1) {
+        $linkAction = \ord($binary[$offset]);
+        ++$offset;
+
+        if (0 !== $linkAction && 1 !== $linkAction) {
             throw new \InvalidArgumentException('linkAction must be 0 or 1');
         }
 
@@ -55,32 +61,36 @@ final class AccountKeyLinkTransaction extends AbstractTransaction
 
     protected function encodeBody(): string
     {
-        return $this->linkedPublicKey . chr($this->linkAction);
+        return $this->linkedPublicKey.\chr($this->linkAction);
     }
 
     /**
      * @param string $binary
      * @param int $offset
+     *
      * @return array{linkedPublicKey:string, linkAction:int, offset:int}
      */
     protected static function decodeBody(string $binary, int $offset): array
     {
-        $len = strlen($binary);
+        $len = \strlen($binary);
 
         $need = 32;
+
         if ($len - $offset < $need) {
-            throw new \RuntimeException("Unexpected EOF: need {$need} bytes for linkedPublicKey, have " . ($len - $offset));
+            throw new \RuntimeException("Unexpected EOF: need {$need} bytes for linkedPublicKey, have ".($len - $offset));
         }
-        $linkedPublicKey = substr($binary, $offset, 32);
+        $linkedPublicKey = \substr($binary, $offset, 32);
         $offset += 32;
 
         $need = 1;
+
         if ($len - $offset < $need) {
-            throw new \RuntimeException("Unexpected EOF: need {$need} byte for linkAction, have " . ($len - $offset));
+            throw new \RuntimeException("Unexpected EOF: need {$need} byte for linkAction, have ".($len - $offset));
         }
-        $linkAction = ord($binary[$offset]);
-        $offset += 1;
-        if ($linkAction !== 0 && $linkAction !== 1) {
+        $linkAction = \ord($binary[$offset]);
+        ++$offset;
+
+        if (0 !== $linkAction && 1 !== $linkAction) {
             throw new \InvalidArgumentException('linkAction must be 0 or 1');
         }
 

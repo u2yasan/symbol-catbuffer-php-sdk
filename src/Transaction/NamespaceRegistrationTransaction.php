@@ -1,35 +1,47 @@
 <?php
 declare(strict_types=1);
+
 namespace SymbolSdk\Transaction;
 
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * NamespaceRegistrationTransaction
+ * - 共通ヘッダ128B対応
+ * - body の順序（cats 準拠）:
+ *   registration_type が ROOT(=0) のとき: duration(u64) を先頭に配置
+ *   registration_type が CHILD(=1) のとき: parent_id(u64) を先頭に配置
+ *   その後: id(u64), registration_type(u8), name_size(u8), name(bytes)
+ *
+ * ルール:
+ * - u64 値は 10進文字列 (…Dec) で保持
+ * - 読み取りは AbstractTransaction の readU64LEDecAt() を使用（u64DecAt は使わない）
+ * - 残量チェックは「必要長 < 残バイト」で明示比較（!$x の否定は使わない）
+ */
 final class NamespaceRegistrationTransaction extends AbstractTransaction
 {
-    public readonly int $registrationType;
-    public readonly ?string $durationDec;
-    public readonly ?string $parentIdDec;
-    public readonly string $name;
-    public readonly string $namespaceIdDec;
+    /** @var int 0=root, 1=child */
+    private int $registrationType;
 
-    /**
-     * @param int $registrationType 0=root, 1=child
-     * @param ?string $durationDec 10進文字列, root時のみ
-     * @param ?string $parentIdDec 10進文字列, child時のみ
-     * @param string $name
-     * @param string $namespaceIdDec 10進文字列
-     * @param string $headerRaw
-     * @param int $size
-     * @param int $version
-     * @param int $network
-     * @param int $type
-     * @param string $maxFeeDec
-     * @param string $deadlineDec
-     */
+    /** @var string|null u64 decimal string（root のとき必須、それ以外 null） */
+    private ?string $durationDec;
+
+    /** @var string|null u64 decimal string（child のとき必須、それ以外 null） */
+    private ?string $parentIdDec;
+
+    /** @var string u64 decimal string */
+    private string $namespaceIdDec;
+
+    /** @var string 生の名前（バイト列） */
+    private string $name;
+
     public function __construct(
         int $registrationType,
         ?string $durationDec,
         ?string $parentIdDec,
-        string $name,
         string $namespaceIdDec,
+        string $name,
         string $headerRaw,
         int $size,
         int $version,
@@ -38,96 +50,114 @@ final class NamespaceRegistrationTransaction extends AbstractTransaction
         string $maxFeeDec,
         string $deadlineDec
     ) {
-        parent::__construct($headerRaw, $size, $version, $network, $type, $maxFeeDec, $deadlineDec);
         if ($registrationType !== 0 && $registrationType !== 1) {
-            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
+            throw new InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
         }
-        if ($registrationType === 0 && $durationDec === null) {
-            throw new \InvalidArgumentException('durationDec required for root namespace');
+        if ($registrationType === 0) { // root
+            if ($durationDec === null) {
+                throw new InvalidArgumentException('durationDec is required for root registration');
+            }
+            if (preg_match('/^[0-9]+$/', $durationDec) !== 1) {
+                throw new InvalidArgumentException('durationDec must be decimal string');
+            }
+            if ($parentIdDec !== null) {
+                throw new InvalidArgumentException('parentIdDec must be null for root registration');
+            }
+        } else { // child
+            if ($parentIdDec === null) {
+                throw new InvalidArgumentException('parentIdDec is required for child registration');
+            }
+            if (preg_match('/^[0-9]+$/', $parentIdDec) !== 1) {
+                throw new InvalidArgumentException('parentIdDec must be decimal string');
+            }
+            if ($durationDec !== null) {
+                throw new InvalidArgumentException('durationDec must be null for child registration');
+            }
         }
-        if ($registrationType === 1 && $parentIdDec === null) {
-            throw new \InvalidArgumentException('parentIdDec required for child namespace');
+
+        if (preg_match('/^[0-9]+$/', $namespaceIdDec) !== 1) {
+            throw new InvalidArgumentException('namespaceIdDec must be decimal string');
         }
-        if ($registrationType === 0 && $parentIdDec !== null) {
-            throw new \InvalidArgumentException('parentIdDec must be null for root namespace');
+        if ($name === '') {
+            throw new InvalidArgumentException('name must not be empty');
         }
-        if ($registrationType === 1 && $durationDec !== null) {
-            throw new \InvalidArgumentException('durationDec must be null for child namespace');
+        if (strlen($name) > 255) {
+            throw new InvalidArgumentException('name_size must be <= 255');
         }
-        if (!preg_match('/^[\x20-\x7E]{1,64}$/', $name)) {
-            throw new \InvalidArgumentException('name must be 1-64 printable ASCII bytes');
-        }
-        if (!preg_match('/^[0-9]+$/', $namespaceIdDec)) {
-            throw new \InvalidArgumentException('namespaceIdDec must be decimal string');
-        }
-        if ($registrationType === 0 && !preg_match('/^[0-9]+$/', $durationDec)) {
-            throw new \InvalidArgumentException('durationDec must be decimal string');
-        }
-        if ($registrationType === 1 && !preg_match('/^[0-9]+$/', $parentIdDec)) {
-            throw new \InvalidArgumentException('parentIdDec must be decimal string');
-        }
+
+        parent::__construct($headerRaw, $size, $version, $network, $type, $maxFeeDec, $deadlineDec);
+
         $this->registrationType = $registrationType;
-        $this->durationDec = $durationDec;
-        $this->parentIdDec = $parentIdDec;
-        $this->name = $name;
-        $this->namespaceIdDec = $namespaceIdDec;
+        $this->durationDec      = $durationDec;
+        $this->parentIdDec      = $parentIdDec;
+        $this->namespaceIdDec   = ltrim($namespaceIdDec, '0') === '' ? '0' : ltrim($namespaceIdDec, '0');
+        $this->name             = $name;
     }
 
+    /**
+     * ヘッダ＋ボディの完全なバイナリから復元
+     */
     public static function fromBinary(string $binary): self
     {
-        $h = self::parseHeader($binary);
+        $h      = self::parseHeader($binary);
         $offset = $h['offset'];
-        $len = strlen($binary);
+        $len    = strlen($binary);
 
-        $need = function (int $n) use ($len, $offset): void {
-            if ($len - $offset < $n) {
-                throw new \RuntimeException("Unexpected EOF while reading NamespaceRegistration body: need {$n}, have " . ($len - $offset));
-            }
-        };
-
-        // 1) first u64 = duration (root) or parent_id (child)
-        $need(8);
-        $firstU64 = self::u64DecAt($binary, $offset);
-        $offset += 8;
-
-        // 2) id:u64 (namespaceId)
-        $need(8);
-        $namespaceIdDec = self::u64DecAt($binary, $offset);
-        $offset += 8;
-
-        // 3) registration_type:u8 (0=root, 1=child)
-        $need(1);
-        $registrationType = ord($binary[$offset]);
-        $offset += 1;
-        if ($registrationType !== 0 && $registrationType !== 1) {
-            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
+        // 最低限必要: 先頭の可変 u64(8) + id(8) + registration_type(1) + name_size(1)
+        if ($len < $offset + 8 + 8 + 1 + 1) {
+            $need = ($offset + 18) - $len;
+            throw new RuntimeException("Unexpected EOF while reading NamespaceRegistrationTransaction body: need {$need} more bytes");
         }
 
-        // 4) name_size:u8
-        $need(1);
+        // 先頭 8 バイトは registrationType に応じて duration か parentId
+        // ただし registration_type(u8) は id(u64) の後に現れるため、いったん両方の可能性に対応して進める
+        // cats 仕様に従い、最初に「duration or parentId」を 8B 読む
+        $firstU64Dec = self::readU64LEDecAt($binary, $offset);
+        $offset += 8;
+
+        // 次に id(u64)
+        $namespaceIdDec = self::readU64LEDecAt($binary, $offset);
+        $offset += 8;
+
+        // 次に registration_type(u8)
+        $registrationType = ord($binary[$offset]);
+        $offset += 1;
+
+        if ($registrationType !== 0 && $registrationType !== 1) {
+            throw new InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
+        }
+
+        // name_size(u8)
         $nameSize = ord($binary[$offset]);
         $offset += 1;
 
-        // 5) name[name_size]
-        $need($nameSize);
+        // name(bytes)
+        $remaining = $len - $offset;
+        if ($remaining < $nameSize) {
+            $need = $nameSize - $remaining;
+            throw new RuntimeException("Unexpected EOF while reading name: need {$need} more bytes");
+        }
         $name = substr($binary, $offset, $nameSize);
+        if (strlen($name) !== $nameSize) {
+            throw new RuntimeException('Unexpected EOF while slicing name');
+        }
         $offset += $nameSize;
 
-        // map firstU64
+        // registration_type に応じて duration/parentId を確定
         $durationDec = null;
         $parentIdDec = null;
-        if ($registrationType === 0) {
-            $durationDec = $firstU64;
-        } else {
-            $parentIdDec = $firstU64;
+        if ($registrationType === 0) {          // root
+            $durationDec = $firstU64Dec;
+        } else {                                 // child
+            $parentIdDec = $firstU64Dec;
         }
 
         return new self(
             $registrationType,
             $durationDec,
             $parentIdDec,
-            $name,
             $namespaceIdDec,
+            $name,
             $h['headerRaw'],
             $h['size'],
             $h['version'],
@@ -136,54 +166,44 @@ final class NamespaceRegistrationTransaction extends AbstractTransaction
             $h['maxFeeDec'],
             $h['deadlineDec']
         );
-    } 
+    }
+
     /**
-     * @return string
+     * ボディ直列化（ヘッダは親が前置）
+     *
+     * cats の定義順:
+     *   registration_type が ROOT の場合: duration, id, registration_type, name_size, name
+     *   registration_type が CHILD の場合: parent_id, id, registration_type, name_size, name
      */
     protected function encodeBody(): string
     {
         $out = '';
 
-        // 1) duration or parent_id
-        if ($this->registrationType === 0) {
-            // root
+        if ($this->registrationType === 0) { // root: duration first
             if ($this->durationDec === null) {
-                throw new \RuntimeException('durationDec is required for root namespace');
+                throw new \LogicException('durationDec must not be null for root');
             }
             $out .= self::u64LE($this->durationDec);
-        } else {
-            // child
+        } else { // child: parentId first
             if ($this->parentIdDec === null) {
-                throw new \RuntimeException('parentIdDec is required for child namespace');
+                throw new \LogicException('parentIdDec must not be null for child');
             }
             $out .= self::u64LE($this->parentIdDec);
         }
 
-        // 2) id (namespaceId)
+        // id
         $out .= self::u64LE($this->namespaceIdDec);
-
-        // 3) registration_type
+        // registration_type
         $out .= chr($this->registrationType);
-
-        // 4) name_size + name
+        // name_size
         $nameSize = strlen($this->name);
         if ($nameSize > 255) {
-            throw new \InvalidArgumentException('name too long (max 255)');
+            throw new \LogicException('name_size must be <= 255');
         }
         $out .= chr($nameSize);
+        // name
         $out .= $this->name;
 
         return $out;
-    }
-
-    /**
-     * @param string $binary
-     * @param int $offset
-     * @return array<string, mixed>
-     */
-    protected static function decodeBody(string $binary, int $offset): array
-    {
-        // 未使用（テスト用ダミー）
-        return [];
     }
 }

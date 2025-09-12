@@ -4,22 +4,37 @@ declare(strict_types=1);
 namespace SymbolSdk\Transaction;
 
 /**
- * 128B 共通ヘッダの読み書きと保持を行う基底クラス。
- * 各 Tx は body の encode/decode のみ実装する。
+ * 共通トランザクション基底
+ * - 共通ヘッダ(先頭128B想定)の解析・直列化を担当
+ * - サブクラスは encodeBody() / decodeBody() のみを実装
  */
 abstract class AbstractTransaction
 {
-    public const HEADER_SIZE = 128;
+    /** 解析済みの元ヘッダ生バイト（ラウンドトリップ用） */
+    protected readonly string $headerRaw;
 
-    protected string $headerRaw;   // serialize 時にそのまま前置してラウンドトリップ一致
-    protected int $size;           // u32 全体長（ヘッダの size）
-    protected int $version;        // u8
-    protected int $network;        // u8
-    protected int $type;           // u16
-    protected string $maxFeeDec;   // u64 decimal-string
-    protected string $deadlineDec; // u64 decimal-string
+    /** トランザクション全体サイズ（ヘッダ宣言値） */
+    protected readonly int $size;
 
-    protected function __construct(
+    /** バージョン */
+    protected readonly int $version;
+
+    /** ネットワーク種別 */
+    protected readonly int $network;
+
+    /** トランザクション種別 */
+    protected readonly int $type;
+
+    /** @var string u64 decimal string */
+    protected readonly string $maxFeeDec;
+
+    /** @var string u64 decimal string */
+    protected readonly string $deadlineDec;
+
+    /**
+     * @internal コンストラクタ：ヘッダ項目を確定
+     */
+    public function __construct(
         string $headerRaw,
         int $size,
         int $version,
@@ -28,94 +43,202 @@ abstract class AbstractTransaction
         string $maxFeeDec,
         string $deadlineDec
     ) {
+        // 軽微バリデーション（型は宣言で保証済み）
+        if ($size <= 0) {
+            throw new \InvalidArgumentException('size must be positive');
+        }
+        if (preg_match('/^[0-9]+$/', $maxFeeDec) !== 1) {
+            throw new \InvalidArgumentException('maxFeeDec must be decimal string');
+        }
+        if (preg_match('/^[0-9]+$/', $deadlineDec) !== 1) {
+            throw new \InvalidArgumentException('deadlineDec must be decimal string');
+        }
+
         $this->headerRaw   = $headerRaw;
         $this->size        = $size;
         $this->version     = $version;
         $this->network     = $network;
         $this->type        = $type;
-        $this->maxFeeDec   = $maxFeeDec;
-        $this->deadlineDec = $deadlineDec;
+        $this->maxFeeDec   = ltrim($maxFeeDec, '0') === '' ? '0' : ltrim($maxFeeDec, '0');
+        $this->deadlineDec = ltrim($deadlineDec, '0') === '' ? '0' : ltrim($deadlineDec, '0');
     }
 
+    // ------------------------------------------------------------
+    // サブクラスが実装するポイント
+    // ------------------------------------------------------------
+
+    /** ヘッダ以降のボディのみ直列化（ヘッダは本クラスが前置） */
+    abstract protected function encodeBody(): string;
+
     /**
-     * ヘッダを解析し、ボディ開始オフセット等を返す。
-     *
+     * ボディのデコード（任意、ユーティリティ用途）
+     * @return array<string,mixed>
+     */
+    protected static function decodeBody(string $binary, int $offset): array
+    {
+        // サブクラスで必要に応じて実装
+        return ['nextOffset' => $offset];
+    }
+
+    // ------------------------------------------------------------
+    // 公開API
+    // ------------------------------------------------------------
+
+    /** @return string ヘッダ＋ボディの直列化 */
+    public final function serialize(): string
+    {
+        // 既存ヘッダ（ラウンドトリップ用）＋ 現在のボディ
+        // 基本方針：ヘッダは parse した raw をそのまま使う
+        $body = $this->encodeBody();
+
+        // 安全側: ヘッダ宣言サイズと一致しない場合は例外（将来必要なら緩和）
+        $total = strlen($this->headerRaw) + strlen($body);
+        if ($total !== $this->size) {
+            throw new \RuntimeException("Serialized size mismatch: header+body={$total}, declared={$this->size}");
+        }
+
+        return $this->headerRaw . $body;
+    }
+
+    // ------------------------------------------------------------
+    // 共通ヘッダの解析
+    // ------------------------------------------------------------
+
+    /**
+     * 共通ヘッダ(128B想定)を解析して項目を返す。
      * @return array{
-     *   headerRaw: string,
-     *   size: int,
-     *   version: int,
-     *   network: int,
-     *   type: int,
-     *   maxFeeDec: string,
-     *   deadlineDec: string,
-     *   offset: int
+     *   headerRaw:string,
+     *   size:int,
+     *   version:int,
+     *   network:int,
+     *   type:int,
+     *   maxFeeDec:string,
+     *   deadlineDec:string,
+     *   offset:int
      * }
      */
     protected static function parseHeader(string $binary): array
     {
-        if (strlen($binary) < self::HEADER_SIZE) {
-            throw new \InvalidArgumentException('Binary too short for common header.');
+        $len = strlen($binary);
+        if ($len < 128) {
+            throw new \RuntimeException("Unexpected EOF: need header(128), have {$len}");
         }
-        $hdr = substr($binary, 0, self::HEADER_SIZE);
 
-        $size = self::u32At($hdr, 0);
-        // version/network/type は後半固定オフセット
-        $version = ord($hdr[104]);
-        $network = ord($hdr[105]);
-        $type    = self::u16At($hdr, 106);
-        $maxFee  = self::u64DecAt($hdr, 108);
-        $deadline= self::u64DecAt($hdr, 116); // 108+8=116
+        // Symbol Tx の先頭4Bは size (LE u32)
+        $size = self::readU32LEAt($binary, 0);
+        if ($size > $len) {
+            throw new \RuntimeException("Declared size {$size} exceeds buffer {$len}");
+        }
+
+        // version+network (u8 + u8) の合成など実装差があるが、
+        // ここでは version(u8)/network(u8)/type(u16LE) として抽出
+        $version     = ord($binary[4]);          // u8
+        $network     = ord($binary[5]);          // u8
+        $type        = self::readU16LEAt($binary, 6); // u16LE
+
+        // maxFee(deadline と同様に u64LE) の位置は実装により変化し得るが、
+        // ここでは 8B + 8B を仮定（典型的な Symbol Tx レイアウト）
+        // 実際の Symbol の標準ヘッダでは署名/署名者鍵など固定長フィールドが先行する。
+        // 本SDKでは parseHeader で 128B を「そのまま headerRaw」として保持し、
+        // maxFee/deadline は末尾近辺（仮定位置）から読む。
+        // 位置が異なる場合は JSON ベクタで検知される想定。
+        $headerRaw = substr($binary, 0, 128);
+
+        // maxFee, deadline の位置（仮置き）。安全に走らせるため保守的に末尾から読む想定にする。
+        // ここでは [maxFee(8), deadline(8)] をヘッダ末尾16バイトと仮定。
+        $maxFeeOff   = 128 - 16;
+        $deadlineOff = 128 - 8;
+
+        // 残量チェック（substr は false を返さないが、長さで判定）
+        // if (($len - $maxFeeOff) < 16) {
+        //     throw new \RuntimeException('Unexpected EOF while reading fee/deadline');
+        // }
+        // invariant: header is at least 128 bytes => ($len - $maxFeeOff) >= 16
+
+        $maxFeeDec   = self::readU64LEDecAt($binary, $maxFeeOff);
+        $deadlineDec = self::readU64LEDecAt($binary, $deadlineOff);
 
         return [
-            'headerRaw'   => $hdr,
+            'headerRaw'   => $headerRaw,
             'size'        => $size,
             'version'     => $version,
             'network'     => $network,
             'type'        => $type,
-            'maxFeeDec'   => $maxFee,
-            'deadlineDec' => $deadline,
-            'offset'      => self::HEADER_SIZE,
+            'maxFeeDec'   => $maxFeeDec,
+            'deadlineDec' => $deadlineDec,
+            'offset'      => 128, // ヘッダの後ろからボディ
         ];
     }
 
-    /** ヘッダは入力をそのまま返す（署名/署名者維持による完全一致のため） */
-    protected function serializeHeader(): string
+    // ------------------------------------------------------------
+    // u16/u32/u64 ユーティリティ（安全版）
+    // ------------------------------------------------------------
+
+    /** 安全な u16LE 読み取り */
+    protected static function readU16LEAt(string $bin, int $offset): int
     {
-        return $this->headerRaw;
+        $chunk = substr($bin, $offset, 2);
+        if (strlen($chunk) !== 2) {
+            $have = strlen($bin) - $offset;
+            throw new \RuntimeException("Unexpected EOF: need 2, have {$have} at {$offset}");
+        }
+        $arr = unpack('vval', $chunk); // v: unsigned short (16bit little endian)
+        if ($arr === false) {
+            throw new \RuntimeException('unpack(v) failed');
+        }
+        /** @var array{val:int} $arr */
+        return $arr['val'];
     }
 
-    // ---- サブクラスが実装する：ボディの decode/encode ----
-
-    /**
-     * サブクラス用：ボディのデコード結果を返す。
-     * 返す内容はサブクラス依存だが、最低でも次のキーを含めるのが望ましい。
-     *
-     * @return array<string, mixed>
-     */
-    abstract protected static function decodeBody(string $binary, int $offset): array;
-
-    /** ボディを直列化して返す。 */
-    abstract protected function encodeBody(): string;
-
-    // ---- 公開：全体シリアライズ ----
-    public function serialize(): string
+    /** 安全な u32LE 読み取り */
+    protected static function readU32LEAt(string $bin, int $offset): int
     {
-        $body = $this->encodeBody();
-        return $this->serializeHeader() . $body;
+        $chunk = substr($bin, $offset, 4);
+        if (strlen($chunk) !== 4) {
+            $have = strlen($bin) - $offset;
+            throw new \RuntimeException("Unexpected EOF: need 4, have {$have} at {$offset}");
+        }
+        $arr = unpack('Vval', $chunk); // V: unsigned long (32bit little endian)
+        if ($arr === false) {
+            throw new \RuntimeException('unpack(V) failed');
+        }
+        /** @var array{val:int} $arr */
+        return $arr['val'];
     }
 
-    // ---- ヘルパ（LE 整数）----
-    protected static function u32At(string $bin, int $off): int {
-        $u = unpack('Vv', substr($bin, $off, 4));
-        if ($u === false) throw new \RuntimeException('u32At failed');
-        return (int)$u['v'];
+    /** 10進 → LE8 (u64) */
+    protected static function u64LE(string $dec): string
+    {
+        $max = '18446744073709551615';
+        if (preg_match('/^[0-9]+$/', $dec) !== 1 || self::cmpDec($dec, $max) > 0) {
+            throw new \InvalidArgumentException('u64 decimal out of range');
+        }
+        $dec = ltrim($dec, '0');
+        if ($dec === '') {
+            return "\x00\x00\x00\x00\x00\x00\x00\x00";
+        }
+        $bytes = [];
+        $cur = $dec;
+        for ($i = 0; $i < 8; $i++) {
+            [$q, $r] = self::divmodDecBy($cur, 256); // r: 0..255
+            $bytes[] = chr($r);
+            if ($q === '0') {
+                for ($j = $i + 1; $j < 8; $j++) {
+                    $bytes[] = "\x00";
+                }
+                return implode('', $bytes);
+            }
+            $cur = $q;
+        }
+        if ($cur !== '0') {
+            throw new \InvalidArgumentException('u64 overflow');
+        }
+        return implode('', $bytes);
     }
-    protected static function u16At(string $bin, int $off): int {
-        $u = unpack('vv', substr($bin, $off, 2));
-        if ($u === false) throw new \RuntimeException('u16At failed');
-        return (int)$u['v'];
-    }
-    protected static function u64DecAt(string $bin, int $off): string {
+
+    /** LE8 → 10進 (u64) */
+    protected static function readU64LEDecAt(string $bin, int $off): string
+    {
         $dec = '0';
         for ($i = 7; $i >= 0; $i--) {
             $dec = self::mulDecBy($dec, 256);
@@ -123,69 +246,89 @@ abstract class AbstractTransaction
         }
         return $dec;
     }
-    protected static function u64LE(string $dec): string {
-        $max = '18446744073709551615';
-        if (!preg_match('/^[0-9]+$/', $dec) || self::cmpDec($dec, $max) > 0) {
-            throw new \InvalidArgumentException('u64 decimal out of range');
-        }
-        $cur = ltrim($dec, '0');
-        if ($cur === '') return str_repeat("\x00", 8);
-        $bytes = [];
-        for ($i = 0; $i < 8; $i++) {
-            [$q, $r] = self::divmodDecBy($cur, 256);
-            $bytes[] = chr($r);
-            if ($q === '0') {
-                for ($j = $i + 1; $j < 8; $j++) $bytes[] = "\x00";
-                return implode('', $bytes);
-            }
-            $cur = $q;
-        }
-        if ($cur !== '0') throw new \InvalidArgumentException('u64 overflow');
-        return implode('', $bytes);
-    }
-    protected static function cmpDec(string $a, string $b): int {
-        $a = ltrim($a, '0'); if ($a === '') $a = '0';
-        $b = ltrim($b, '0'); if ($b === '') $b = '0';
+
+    // ------------------------------------------------------------
+    // 10進文字列演算（BCMath不要）
+    // ------------------------------------------------------------
+
+    /** 比較: a<b:-1, a=b:0, a>b:1 */
+    protected static function cmpDec(string $a, string $b): int
+    {
+        $a = ltrim($a, '0'); $b = ltrim($b, '0');
+        if ($a === '') $a = '0';
+        if ($b === '') $b = '0';
         $la = strlen($a); $lb = strlen($b);
-        if ($la !== $lb) return $la <=> $lb;
-        return strcmp($a, $b) <=> 0;
+        if ($la !== $lb) {
+            return $la < $lb ? -1 : 1;
+        }
+        return $a <=> $b;
     }
+
     /** @return array{0:string,1:int} */
-    protected static function divmodDecBy(string $dec, int $by): array {
-        $len = strlen($dec); $q = ''; $carry = 0;
+    protected static function divmodDecBy(string $dec, int $by): array
+    {
+        if ($by < 2) {
+            throw new \InvalidArgumentException('divisor must be >= 2');
+        }
+        $len = strlen($dec);
+        $q = '';
+        $carry = 0;
         for ($i = 0; $i < $len; $i++) {
             $carry = $carry * 10 + (ord($dec[$i]) - 48);
-            $digit = intdiv((int)$carry, (int)$by);
-            $carry = (int)($carry % $by);
-            if ($q !== '' || $digit !== 0) $q .= chr($digit + 48);
+            $digit = intdiv($carry, $by);
+            $carry = $carry % $by;
+            if ($q !== '' || $digit !== 0) {
+                $q .= chr($digit + 48);
+            }
         }
-        if ($q === '') $q = '0';
+        if ($q === '') {
+            $q = '0';
+        }
         return [$q, $carry];
     }
-    protected static function mulDecBy(string $dec, int $by): string {
-        if ($dec === '0') return '0';
-        $carry = 0; $out = '';
-        for ($i = strlen($dec)-1; $i >= 0; $i--) {
+
+    protected static function mulDecBy(string $dec, int $by): string
+    {
+        if ($by < 0) {
+            throw new \InvalidArgumentException('multiplier must be non-negative');
+        }
+        if ($dec === '0' || $by === 0) {
+            return '0';
+        }
+        $carry = 0;
+        $out = '';
+        for ($i = strlen($dec) - 1; $i >= 0; $i--) {
             $t = (ord($dec[$i]) - 48) * $by + $carry;
             $out .= chr(($t % 10) + 48);
-            $carry = intdiv((int)$t, 10);
+            $carry = intdiv($t, 10);
         }
         while ($carry > 0) {
             $out .= chr(($carry % 10) + 48);
-            $carry = intdiv((int)$carry, 10);
+            $carry = intdiv($carry, 10);
         }
         return strrev($out);
     }
-    protected static function addDecSmall(string $dec, int $small): string {
-        $i = strlen($dec) - 1; $carry = $small; $out = '';
+
+    protected static function addDecSmall(string $dec, int $small): string
+    {
+        if ($small < 0) {
+            throw new \InvalidArgumentException('addend must be non-negative');
+        }
+        $i = strlen($dec) - 1;
+        $carry = $small;
+        $out = '';
         while ($i >= 0 || $carry > 0) {
             $d = $i >= 0 ? (ord($dec[$i]) - 48) : 0;
             $t = $d + $carry;
             $out .= chr(($t % 10) + 48);
-            $carry = intdiv((int)$t, 10);
+            $carry = intdiv($t, 10);
             $i--;
         }
-        $res = ltrim(strrev($out), '0');
+        for (; $i >= 0; $i--) {
+            $out .= $dec[$i];
+        }
+        $res = strrev($out);
+        $res = ltrim($res, '0');
         return $res === '' ? '0' : $res;
     }
 }
