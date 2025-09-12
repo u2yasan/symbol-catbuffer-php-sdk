@@ -1,4 +1,3 @@
-<!-- prompts/partials/common-php-guardrails.md -->
 > 目的：PHP 8.3+ / PHPStan クリーン / テスト互換のコードだけを生成する。
 > 出力は **PHPコードのみ**（説明やMarkdownは出力しない）。
 
@@ -47,7 +46,7 @@
       $len = strlen($dec);
       $q = '';
       $carry = 0; // int
-      for ($i = 0; $i < $len; $i++) {
+      for ($i = 0; i < $len; $i++) {
           $carry = $carry * 10 + (ord($dec[$i]) - 48); // int
           $digit = intdiv((int)$carry, (int)$by);       // 明示的に (int) キャスト
           $carry = (int)($carry % $by);                 // 明示的に (int)
@@ -163,7 +162,7 @@ public function readVector(int $count, callable $reader): array {
   declare(strict_types=1);
   namespace {{namespace}};
   ```
-- 既定 `namespace` はプロンプト変数 `{{namespace}}`（例：`SymbolSdk\\Transaction`）。**`App\...` は使わない**。
+- 既定 `namespace` はプロンプト変数 `{{namespace}}`（例：`SymbolSdk\Transaction`）。**`App\...` は使わない**。
 
 ## Defensive Checks（PHPStan 友好）
 - 実行時ガードは **必要**。PHPStan が「常に false」と誤推論する場合のみ、その直前に：
@@ -210,4 +209,38 @@ public function readVector(int $count, callable $reader): array {
 - **静的解析無視コメント**  
   `@phpstan-ignore-next-line` や `@phpstan-ignore-line` は原則禁止。  
   型解決や例外処理で必ず通るように修正し、不要になった無視コメントは残さない。
+
+# 追加の実装ルール（安定化）
+- 配列の値型を必ず DocBlock で明示する：
+  - `@param list<string> $innerPayloads`
+  - `@param list<array{version:int, signerPublicKey:string, signature:string}> $cosignatures`
+- `unpack('V', substr(...))[1]` のような直接参照は **禁止**。必ず安全ラッパを実装して使う：
+  ```php
+  /** @internal */
+  private static function readU32LEAt(string $bin, int $offset): int {
+      $chunk = substr($bin, $offset, 4);
+      if (strlen($chunk) !== 4) throw new \RuntimeException('EOF u32');
+      $a = unpack('Vval', $chunk);
+      if ($a === false) throw new \RuntimeException('unpack failed');
+      return (int)$a['val'];
+  }
+- 配列 shape が DocBlock で固定されている場合、**既知キーへの `isset()` / `array_key_exists()` は使用しない**。
+  - 値の妥当性（型・長さ・範囲）のみ検証する。
+- `@param list<array{version:int, signerPublicKey:string, signature:string}> $cosignatures` をコンストラクタに付与。
+  - `version` は非負の int、`signerPublicKey` は 32B、`signature` は 64B を厳格チェック。
   
+## Static Analysis / QA
+
+- 既知の array-shape に対して `isset()` / `array_key_exists()` を使わない。DocBlock を事実とみなし、**値の妥当性**のみ検証する。
+- `substr()` / `unpack()` は **安全ラッパ**経由で使用し、`array|false` を表層に出さない。
+- すべての配列は **値型**を DocBlock で明示（`@param list<Foo>` / `@return array<string,mixed>` など）。
+- 例外は `InvalidArgumentException`（値域・形式）／`RuntimeException`（EOF・サイズ不整合）を使い分ける。
+- すべての PHP ファイルは `declare(strict_types=1);` を先頭に置く。
+- 無意味な `@phpstan-ignore-*` は禁止。解析エラーは型/条件/ユーティリティの改善で解消する。
+
+# ガードレール
+- コンストラクタで例外を投げないなら、@throws は書かない。
+- PHPStan に「throws.unusedType」と警告されないようにする。
+- Docの `@readonly` は使用禁止。ネイティブの `readonly` を使う場合は**コンストラクタ以外で代入しない**設計に限る。
+- 文字列引数に対する `is_string()` チェックは書かない（型宣言で担保）。
+- `$offset` は非負整数として扱う。PHPDoc は `@var int<0, max>` / `@return int<0, max>` を用いる。
