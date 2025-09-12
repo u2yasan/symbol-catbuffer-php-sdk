@@ -77,44 +77,51 @@ final class NamespaceRegistrationTransaction extends AbstractTransaction
     {
         $h = self::parseHeader($binary);
         $offset = $h['offset'];
-        $remaining = strlen($binary) - $offset;
-        // registrationType:u8
-        if ($remaining < 1) throw new \RuntimeException('Unexpected EOF: need 1 byte for registrationType');
+        $len = strlen($binary);
+
+        $need = function (int $n) use ($len, $offset): void {
+            if ($len - $offset < $n) {
+                throw new \RuntimeException("Unexpected EOF while reading NamespaceRegistration body: need {$n}, have " . ($len - $offset));
+            }
+        };
+
+        // 1) first u64 = duration (root) or parent_id (child)
+        $need(8);
+        $firstU64 = self::u64DecAt($binary, $offset);
+        $offset += 8;
+
+        // 2) id:u64 (namespaceId)
+        $need(8);
+        $namespaceIdDec = self::u64DecAt($binary, $offset);
+        $offset += 8;
+
+        // 3) registration_type:u8 (0=root, 1=child)
+        $need(1);
         $registrationType = ord($binary[$offset]);
         $offset += 1;
-        $remaining = strlen($binary) - $offset;
+        if ($registrationType !== 0 && $registrationType !== 1) {
+            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
+        }
+
+        // 4) name_size:u8
+        $need(1);
+        $nameSize = ord($binary[$offset]);
+        $offset += 1;
+
+        // 5) name[name_size]
+        $need($nameSize);
+        $name = substr($binary, $offset, $nameSize);
+        $offset += $nameSize;
+
+        // map firstU64
         $durationDec = null;
         $parentIdDec = null;
         if ($registrationType === 0) {
-            // root: duration:u64
-            if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for duration');
-            $durationDec = self::u64DecAt($binary, $offset);
-            $offset += 8;
-        } elseif ($registrationType === 1) {
-            // child: parentId:u64
-            if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for parentId');
-            $parentIdDec = self::u64DecAt($binary, $offset);
-            $offset += 8;
+            $durationDec = $firstU64;
         } else {
-            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
+            $parentIdDec = $firstU64;
         }
-        $remaining = strlen($binary) - $offset;
-        // nameSize:u8
-        if ($remaining < 1) throw new \RuntimeException('Unexpected EOF: need 1 byte for nameSize');
-        $nameSize = ord($binary[$offset]);
-        $offset += 1;
-        $remaining = strlen($binary) - $offset;
-        if ($nameSize < 1 || $nameSize > 64) {
-            throw new \InvalidArgumentException('nameSize must be 1-64');
-        }
-        if ($remaining < $nameSize) throw new \RuntimeException("Unexpected EOF: need {$nameSize} bytes for name");
-        $name = substr($binary, $offset, $nameSize);
-        $offset += $nameSize;
-        $remaining = strlen($binary) - $offset;
-        // namespaceId:u64
-        if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for namespaceId');
-        $namespaceIdDec = self::u64DecAt($binary, $offset);
-        $offset += 8;
+
         return new self(
             $registrationType,
             $durationDec,
@@ -129,31 +136,43 @@ final class NamespaceRegistrationTransaction extends AbstractTransaction
             $h['maxFeeDec'],
             $h['deadlineDec']
         );
-    }
-
+    } 
     /**
      * @return string
      */
     protected function encodeBody(): string
     {
         $out = '';
-        $out .= chr($this->registrationType);
+
+        // 1) duration or parent_id
         if ($this->registrationType === 0) {
-            // root: duration
-            $out .= self::u64LE($this->durationDec ?? '0');
-        } elseif ($this->registrationType === 1) {
-            // child: parentId
-            $out .= self::u64LE($this->parentIdDec ?? '0');
+            // root
+            if ($this->durationDec === null) {
+                throw new \RuntimeException('durationDec is required for root namespace');
+            }
+            $out .= self::u64LE($this->durationDec);
         } else {
-            throw new \InvalidArgumentException('registrationType must be 0 or 1');
+            // child
+            if ($this->parentIdDec === null) {
+                throw new \RuntimeException('parentIdDec is required for child namespace');
+            }
+            $out .= self::u64LE($this->parentIdDec);
         }
-        $nameLen = strlen($this->name);
-        if ($nameLen < 1 || $nameLen > 64) {
-            throw new \InvalidArgumentException('name must be 1-64 bytes');
-        }
-        $out .= chr($nameLen);
-        $out .= $this->name;
+
+        // 2) id (namespaceId)
         $out .= self::u64LE($this->namespaceIdDec);
+
+        // 3) registration_type
+        $out .= chr($this->registrationType);
+
+        // 4) name_size + name
+        $nameSize = strlen($this->name);
+        if ($nameSize > 255) {
+            throw new \InvalidArgumentException('name too long (max 255)');
+        }
+        $out .= chr($nameSize);
+        $out .= $this->name;
+
         return $out;
     }
 
