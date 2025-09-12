@@ -154,6 +154,7 @@ public function readVector(int $count, callable $reader): array {
     }
     return $out; // list<mixed>
 }
+```
 
 ## Class Header & Namespace
 - 先頭3行の順序は固定：
@@ -184,7 +185,6 @@ public function readVector(int $count, callable $reader): array {
 - ❌ `ord()` の結果に対する 0..255 のレンジチェック → ✅ **書かない**（常に 0..255）
 - ❌ 未定義の親メソッド呼び出し → ✅ 親前提があるときのみ（指定が無ければ**単体実装**）
 
-
 ## Transaction 共通ルール
 
 - **ヘッダの扱い**  
@@ -206,3 +206,8 @@ public function readVector(int $count, callable $reader): array {
 
 - **エラー処理**  
   残量不足は `RuntimeException`、値域違反は `InvalidArgumentException`。メッセージに不足バイト数や期待サイズを含める。
+
+- **静的解析無視コメント**  
+  `@phpstan-ignore-next-line` や `@phpstan-ignore-line` は原則禁止。  
+  型解決や例外処理で必ず通るように修正し、不要になった無視コメントは残さない。
+  
