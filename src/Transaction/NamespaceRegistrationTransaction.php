@@ -1,123 +1,170 @@
 <?php
 declare(strict_types=1);
-namespace MyApp\Transaction;
+namespace SymbolSdk\Transaction;
 
-use InvalidArgumentException;
-use RuntimeException;
-
-final class NamespaceRegistrationTransaction
+final class NamespaceRegistrationTransaction extends AbstractTransaction
 {
     public readonly int $registrationType;
-    public readonly int $duration;
-    public readonly int $parentId;
+    public readonly ?string $durationDec;
+    public readonly ?string $parentIdDec;
     public readonly string $name;
+    public readonly string $namespaceIdDec;
 
-    public function __construct(int $registrationType, ?int $duration, ?int $parentId, string $name)
-    {
-        $this->registrationType = $registrationType;
-
-        if ($registrationType === 0) { // root
-            if (!isset($duration) || isset($parentId)) {
-                throw new InvalidArgumentException('Root namespace must have duration and no parentId.');
-            }
-            $this->duration = $duration;
-            $this->parentId = 0;
-        } elseif ($registrationType === 1) { // child
-            if (!isset($parentId) || isset($duration)) {
-                throw new InvalidArgumentException('Child namespace must have parentId and no duration.');
-            }
-            $this->parentId = $parentId;
-            $this->duration = 0;
-        } else {
-            throw new InvalidArgumentException('Invalid registrationType; expected 0(root) or 1(child).');
+    /**
+     * @param int $registrationType 0=root, 1=child
+     * @param ?string $durationDec 10進文字列, root時のみ
+     * @param ?string $parentIdDec 10進文字列, child時のみ
+     * @param string $name
+     * @param string $namespaceIdDec 10進文字列
+     * @param string $headerRaw
+     * @param int $size
+     * @param int $version
+     * @param int $network
+     * @param int $type
+     * @param string $maxFeeDec
+     * @param string $deadlineDec
+     */
+    public function __construct(
+        int $registrationType,
+        ?string $durationDec,
+        ?string $parentIdDec,
+        string $name,
+        string $namespaceIdDec,
+        string $headerRaw,
+        int $size,
+        int $version,
+        int $network,
+        int $type,
+        string $maxFeeDec,
+        string $deadlineDec
+    ) {
+        parent::__construct($headerRaw, $size, $version, $network, $type, $maxFeeDec, $deadlineDec);
+        if ($registrationType !== 0 && $registrationType !== 1) {
+            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
         }
-
+        if ($registrationType === 0 && $durationDec === null) {
+            throw new \InvalidArgumentException('durationDec required for root namespace');
+        }
+        if ($registrationType === 1 && $parentIdDec === null) {
+            throw new \InvalidArgumentException('parentIdDec required for child namespace');
+        }
+        if ($registrationType === 0 && $parentIdDec !== null) {
+            throw new \InvalidArgumentException('parentIdDec must be null for root namespace');
+        }
+        if ($registrationType === 1 && $durationDec !== null) {
+            throw new \InvalidArgumentException('durationDec must be null for child namespace');
+        }
+        if (!preg_match('/^[\x20-\x7E]{1,64}$/', $name)) {
+            throw new \InvalidArgumentException('name must be 1-64 printable ASCII bytes');
+        }
+        if (!preg_match('/^[0-9]+$/', $namespaceIdDec)) {
+            throw new \InvalidArgumentException('namespaceIdDec must be decimal string');
+        }
+        if ($registrationType === 0 && !preg_match('/^[0-9]+$/', $durationDec)) {
+            throw new \InvalidArgumentException('durationDec must be decimal string');
+        }
+        if ($registrationType === 1 && !preg_match('/^[0-9]+$/', $parentIdDec)) {
+            throw new \InvalidArgumentException('parentIdDec must be decimal string');
+        }
+        $this->registrationType = $registrationType;
+        $this->durationDec = $durationDec;
+        $this->parentIdDec = $parentIdDec;
         $this->name = $name;
+        $this->namespaceIdDec = $namespaceIdDec;
     }
 
     public static function fromBinary(string $binary): self
     {
-        $offset = 0;
-        $len = strlen($binary);
-
-        if ($len < 9) {
-            throw new InvalidArgumentException('Binary too short');
-        }
-
-        $registrationType = \ord($binary[$offset++]);
-
-        if ($registrationType === 0) { // root
-            $remaining = $len - $offset;
-            // @phpstan-ignore-next-line runtime boundary check
-            if ($remaining < 8) {
-                throw new \InvalidArgumentException('Binary too short for root: need 8 bytes for duration.');
-            }
-            $duration = self::getUint64($binary, $offset);
+        $h = self::parseHeader($binary);
+        $offset = $h['offset'];
+        $remaining = strlen($binary) - $offset;
+        // registrationType:u8
+        if ($remaining < 1) throw new \RuntimeException('Unexpected EOF: need 1 byte for registrationType');
+        $registrationType = ord($binary[$offset]);
+        $offset += 1;
+        $remaining = strlen($binary) - $offset;
+        $durationDec = null;
+        $parentIdDec = null;
+        if ($registrationType === 0) {
+            // root: duration:u64
+            if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for duration');
+            $durationDec = self::u64DecAt($binary, $offset);
             $offset += 8;
-            $parentId = null;
-        } elseif ($registrationType === 1) { // child
-            $remaining = $len - $offset;
-            // @phpstan-ignore-next-line runtime boundary check
-            if ($remaining < 8) {
-                throw new \InvalidArgumentException('Binary too short for child: need 8 bytes for parentId.');
-            }
-            $parentId = self::getUint64($binary, $offset);
+        } elseif ($registrationType === 1) {
+            // child: parentId:u64
+            if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for parentId');
+            $parentIdDec = self::u64DecAt($binary, $offset);
             $offset += 8;
-            $duration = null;
         } else {
-            throw new \InvalidArgumentException('Invalid registrationType (expected 0=root or 1=child).');
+            throw new \InvalidArgumentException('registrationType must be 0 (root) or 1 (child)');
         }
-
-        if ($offset >= $len) {
-            throw new InvalidArgumentException('Binary end reached while reading nameSize');
+        $remaining = strlen($binary) - $offset;
+        // nameSize:u8
+        if ($remaining < 1) throw new \RuntimeException('Unexpected EOF: need 1 byte for nameSize');
+        $nameSize = ord($binary[$offset]);
+        $offset += 1;
+        $remaining = strlen($binary) - $offset;
+        if ($nameSize < 1 || $nameSize > 64) {
+            throw new \InvalidArgumentException('nameSize must be 1-64');
         }
-        $nameSize = \ord($binary[$offset++]);
-        if ($nameSize < 1 || $offset + $nameSize > $len) {
-            throw new InvalidArgumentException('Invalid or overflow nameSize');
-        }
+        if ($remaining < $nameSize) throw new \RuntimeException("Unexpected EOF: need {$nameSize} bytes for name");
         $name = substr($binary, $offset, $nameSize);
-
-        return new self($registrationType, $duration, $parentId, $name);
+        $offset += $nameSize;
+        $remaining = strlen($binary) - $offset;
+        // namespaceId:u64
+        if ($remaining < 8) throw new \RuntimeException('Unexpected EOF: need 8 bytes for namespaceId');
+        $namespaceIdDec = self::u64DecAt($binary, $offset);
+        $offset += 8;
+        return new self(
+            $registrationType,
+            $durationDec,
+            $parentIdDec,
+            $name,
+            $namespaceIdDec,
+            $h['headerRaw'],
+            $h['size'],
+            $h['version'],
+            $h['network'],
+            $h['type'],
+            $h['maxFeeDec'],
+            $h['deadlineDec']
+        );
     }
 
-    public function serialize(): string
+    /**
+     * @return string
+     */
+    protected function encodeBody(): string
     {
-        $bin = \chr($this->registrationType);
+        $out = '';
+        $out .= chr($this->registrationType);
         if ($this->registrationType === 0) {
-            $bin .= self::putUint64($this->duration);
+            // root: duration
+            $out .= self::u64LE($this->durationDec ?? '0');
         } elseif ($this->registrationType === 1) {
-            $bin .= self::putUint64($this->parentId);
+            // child: parentId
+            $out .= self::u64LE($this->parentIdDec ?? '0');
         } else {
-            throw new RuntimeException('Invalid registrationType during serialize');
+            throw new \InvalidArgumentException('registrationType must be 0 or 1');
         }
-        $nameBytes = $this->name;
-        $nameLen = strlen($nameBytes);
-        if ($nameLen > 255) {
-            throw new InvalidArgumentException('Name too long; max 255 bytes.');
+        $nameLen = strlen($this->name);
+        if ($nameLen < 1 || $nameLen > 64) {
+            throw new \InvalidArgumentException('name must be 1-64 bytes');
         }
-        $bin .= \chr($nameLen) . $nameBytes;
-        return $bin;
+        $out .= chr($nameLen);
+        $out .= $this->name;
+        $out .= self::u64LE($this->namespaceIdDec);
+        return $out;
     }
 
-    private static function getUint64(string $s, int $offset): int
+    /**
+     * @param string $binary
+     * @param int $offset
+     * @return array<string, mixed>
+     */
+    protected static function decodeBody(string $binary, int $offset): array
     {
-        $value = 0;
-        for ($i=0; $i<8; ++$i) {
-            $value |= (ord($s[$offset+$i]) << (8*$i));
-        }
-        // warning: PHP int is signed, this is unsigned interpretation
-        if (PHP_INT_SIZE < 8 && ($value & 0x8000000000000000)) {
-            throw new RuntimeException('uint64 value does not fit in PHP int');
-        }
-        return $value;
-    }
-
-    private static function putUint64(int $n): string
-    {
-        $bytes = '';
-        for ($i=0; $i<8; ++$i) {
-            $bytes .= chr(($n >> (8*$i)) & 0xff);
-        }
-        return $bytes;
+        // 未使用（テスト用ダミー）
+        return [];
     }
 }
