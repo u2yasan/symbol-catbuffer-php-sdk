@@ -17,7 +17,8 @@ dependencies:
 ---
 
 {{> common-principles.md }}
-{{> partials/common-php-guardrails.md }}
+{{> common-php-guardrails.md }}
+{{> common-prompt-guidelines.md }}
 
 # Role
 あなたは catbuffer と JS/Python SDKに精通した PHP 8.3 エンジニアです。対象Txの**ボディ**をcatbuffer順序で実装し、ヘッダと連結します。

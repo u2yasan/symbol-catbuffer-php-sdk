@@ -13,6 +13,7 @@ dependencies:
 ---
 {{> common-php-guardrails.md }}
 {{> common-principles.md }}
+{{> common-prompt-guidelines.md }}
 
 # 実装ルール（AbstractTransaction準拠・必須）
 - クラスは **`{{namespace}}\\{{class_name}}`**、`AbstractTransaction` を **extends**。

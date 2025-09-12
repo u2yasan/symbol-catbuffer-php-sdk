@@ -22,7 +22,8 @@ dependencies:
 ---
 
 {{> common-principles.md }}
-{{> partials/common-php-guardrails.md }}
+{{> common-php-guardrails.md }}
+{{> common-prompt-guidelines.md }}
 
 # Role
 catbuffer準拠の順序とサイズでボディを実装。flagsはbit演算でgetterを用意。
