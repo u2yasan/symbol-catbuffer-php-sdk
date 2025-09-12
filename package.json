@@ -11,7 +11,8 @@
     "gen:tx:nsreg": "ts-node tools/promptgen.ts prompts/tx-namespace-registration.prompt.md namespace=SymbolSdk\\\\Transaction class_name=NamespaceRegistrationTransaction output_path=src/Transaction/NamespaceRegistrationTransaction.php",
     "gen:tx:keylink": "ts-node tools/promptgen.ts prompts/tx-account-key-link.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AccountKeyLinkTransaction output_path=src/Transaction/AccountKeyLinkTransaction.php",
     "gen:tx:agg-complete": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AggregateCompleteTransaction output_path=src/Transaction/AggregateCompleteTransaction.php",
-    "gen:tx:agg-bonded": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AggregateBondedTransaction output_path=src/Transaction/AggregateBondedTransaction.php"
+    "gen:tx:agg-bonded": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AggregateBondedTransaction output_path=src/Transaction/AggregateBondedTransaction.php",
+    "gen:tx:mosaic-supply": "ts-node tools/promptgen.ts prompts/tx-mosaic-supply-change.prompt.md namespace=SymbolSdk\\\\Transaction class_name=MosaicSupplyChangeTransaction output_path=src/Transaction/MosaicSupplyChangeTransaction.php"
   },
   "devDependencies": {
     "@types/mustache": "^4.2.6",
