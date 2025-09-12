@@ -10,3 +10,4 @@
 *.log
 *.cache
 composer.lock
+/var/
