@@ -170,4 +170,107 @@ final class Vectors
         /** @var list<T> $out */
         return $out;
     }
+
+        /**
+     * @param list<array{
+     *   schema_name?: string|null,
+     *   test_name?: string|null,
+     *   type?: string|null,
+     *   hex: string,
+     *   meta?: array<mixed>
+     * }> $rows
+     * @param list<string> $needles
+     * @return list<array{schema_name: string, test_name: non-empty-string, type: string, hex: string, meta: array<mixed>}>
+     */
+    public static function filterByTestNameContainsAny(array $rows, array $needles): array
+    {
+        // 空文字の needle を除外
+        $cleanNeedles = [];
+        foreach ($needles as $n) {
+            if ($n !== '') {
+                $cleanNeedles[] = $n;
+            }
+        }
+        if (count($cleanNeedles) === 0) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $name = $r['test_name'] ?? '';
+            if ($name === '') {
+                continue; // non-empty-string を満たす
+            }
+            foreach ($cleanNeedles as $needle) {
+                if (stripos($name, $needle) !== false) {
+                    $schema = $r['schema_name'] ?? '';
+                    $type   = $r['type'] ?? '';
+                    $hex    = $r['hex'];
+
+                    $meta = [];
+                    if (isset($r['meta'])) {
+                        /** @var array<mixed> $m */
+                        $m = $r['meta'];
+                        $meta = $m;
+                    }
+
+                    $out[] = [
+                        'schema_name' => $schema,
+                        'test_name'   => $name,
+                        'type'        => $type,
+                        'hex'         => $hex,
+                        'meta'        => $meta,
+                    ];
+                    break;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * @param list<array{
+     *   schema_name?: string|null,
+     *   test_name?: string|null,
+     *   type?: string|null,
+     *   hex: string,
+     *   meta?: array<mixed>
+     * }> $rows
+     * @return list<array{schema_name: string, test_name: non-empty-string, type: string, hex: string, meta: array<mixed>}>
+     */
+    public static function filterByTestNameRegex(array $rows, string $pattern): array
+    {
+        if ($pattern === '' || @preg_match($pattern, '') === false) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $name = $r['test_name'] ?? '';
+            if ($name === '') {
+                continue;
+            }
+            if (@preg_match($pattern, $name) === 1) {
+                $schema = $r['schema_name'] ?? '';
+                $type   = $r['type'] ?? '';
+                $hex    = $r['hex'];
+
+                $meta = [];
+                if (isset($r['meta'])) {
+                    /** @var array<mixed> $m */
+                    $m = $r['meta'];
+                    $meta = $m;
+                }
+
+                $out[] = [
+                    'schema_name' => $schema,
+                    'test_name'   => $name,
+                    'type'        => $type,
+                    'hex'         => $hex,
+                    'meta'        => $meta,
+                ];
+            }
+        }
+        return $out;
+    }
 }
