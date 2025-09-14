@@ -29,7 +29,8 @@
     "analyse": "phpstan analyse",
     "test": "phpunit --colors=always",
     "fix:cs": "php-cs-fixer fix --ansi",
-    "check:cs": "php-cs-fixer fix --dry-run --diff --ansi"
+    "check:cs": "php-cs-fixer fix --dry-run --diff --ansi",
+    "ci": "composer validate --strict && composer check:cs && composer analyse && composer test"
   },
   "config": {
     "allow-plugins": {

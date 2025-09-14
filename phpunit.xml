@@ -4,7 +4,6 @@
   xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
   bootstrap="vendor/autoload.php"
   colors="true"
-  cacheResultFile=".phpunit.cache/test-results"
 >
   <testsuites>
     <testsuite name="Symbol PHP SDK Tests">
@@ -12,9 +11,9 @@
     </testsuite>
   </testsuites>
 
-  <source restrictDeprecations="true" restrictNotices="true" restrictWarnings="true">
+  <source>
     <include>
-      <directory suffix=".php">src</directory>
+      <directory>src</directory>
     </include>
   </source>
 </phpunit>

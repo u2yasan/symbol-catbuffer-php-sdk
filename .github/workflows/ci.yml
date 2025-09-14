@@ -1,9 +1,10 @@
-name: ci
+name: CI
 
 on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   qa:
@@ -12,14 +13,37 @@ jobs:
       matrix:
         php: ['8.3', '8.4']
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          tools: composer:v2, php-cs-fixer, phpstan
+          extensions: bcmath, mbstring
           coverage: none
-      - run: composer install --no-interaction --prefer-dist
-      - run: composer analyse
-      - run: composer test
-      # フォーマットは任意（落ちないように結果だけ見たいなら --dry-run）
-      - run: composer check:cs
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.composer/cache/files
+            vendor
+          key: ${{ runner.os }}-php-${{ matrix.php }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php-${{ matrix.php }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: CS (dry-run)
+        run: composer check:cs
+
+      - name: Static Analysis
+        run: composer analyse
+
+      - name: PHPUnit
+        run: composer test
