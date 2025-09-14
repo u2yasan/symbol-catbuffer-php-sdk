@@ -27,3 +27,50 @@
   - `unpack('P')` のような **環境依存のu64処理は禁止**。
   - private で `encodeBody` や `decodeBody` を再定義しない（protected以上必須）。
   - `short ternary (?:)` は禁止。`??` または通常の三項演算子を使う。
+
+### booleanNot.exprNotBoolean を出さないための厳守ルール
+
+- **preg_match の判定は必ず厳密比較**  
+  ❌ `if (!preg_match($re, $s)) { ... }`  
+  ✅ `if (preg_match($re, $s) !== 1) { ... }`
+
+- **unpack の結果は false チェックを厳密に**  
+  ```php
+  $arr = unpack('Vval', $chunk);
+  if ($arr === false) {
+      throw new \RuntimeException('unpack failed');
+  }
+  $v = $arr['val'];
+  ```
+
+- **substr / unpack の「否定」禁⽌**  
+  ❌ `if (!$chunk) { ... }`  
+  ✅ `if (strlen($chunk) !== 4) { ... }`
+
+- **EOF チェックは “残量” で行う**  
+  ```php
+  $remaining = $len - $offset;
+  if ($remaining < $need) {
+      throw new \RuntimeException("Unexpected EOF: need $need, have $remaining");
+  }
+  ```
+
+- **is_string / is_int など “常に true” 判定は書かない**（PHPStan で常真になります）
+
+- **visibility と override**  
+  - `encodeBody()` は `protected`  
+  - `decodeBody(string $binary, int $offset): array{...}` は `protected static` で共通シグネチャ  
+  - 親の `protected` を `private` で覆わない
+
+- **u64 は AbstractTransaction のヘルパを使う**  
+  `self::readU64LEDecAt($binary, $offset)` / `self::u64LE(string $dec)` を使用（`unpack('P')` 禁止）。
+
+- **バリデーション**  
+  入力チェックは “型+範囲+長さ” を明示的に：  
+  ```php
+  if ($action !== 0 && $action !== 1) {
+      throw new \InvalidArgumentException('action must be 0 or 1');
+  }
+  if (strlen($address) !== 24) { ... } // 例: 24B raw address
+  ```
+
