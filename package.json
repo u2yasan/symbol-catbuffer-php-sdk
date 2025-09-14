@@ -15,7 +15,16 @@
     "gen:tx:votinglink": "ts-node tools/promptgen.ts prompts/tx-voting-key-link.prompt.md class_name=VotingKeyLinkTransaction\\\\Transaction class_name=VotingKeyLinkTransaction output_path=src/VotingKeyLinkTransaction.php",
     "gen:tx:agg-complete": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AggregateCompleteTransaction output_path=src/Transaction/AggregateCompleteTransaction.php",
     "gen:tx:agg-bonded": "ts-node tools/promptgen.ts prompts/tx-aggregate.prompt.md namespace=SymbolSdk\\\\Transaction class_name=AggregateBondedTransaction output_path=src/Transaction/AggregateBondedTransaction.php",
-    "gen:tx:mosaic-supply": "ts-node tools/promptgen.ts prompts/tx-mosaic-supply-change.prompt.md namespace=SymbolSdk\\\\Transaction class_name=MosaicSupplyChangeTransaction output_path=src/Transaction/MosaicSupplyChangeTransaction.php"
+    "gen:tx:mosaic-supply": "ts-node tools/promptgen.ts prompts/tx-mosaic-supply-change.prompt.md namespace=SymbolSdk\\\\Transaction class_name=MosaicSupplyChangeTransaction output_path=src/Transaction/MosaicSupplyChangeTransaction.php",
+    "gen:tx:alias:mosaic": "ts-node tools/promptgen.ts prompts/tx-mosaic-alias.prompt.md class_name=MosaicAliasTransaction\\\\Transaction class_name=MosaicAliasTransaction output_path=src/Transaction/MosaicAliasTransaction.php",
+    "gen:tx:alias:address": "ts-node tools/promptgen.ts prompts/tx-address-alias.prompt.md class_name=AddressAliasTransaction\\\\Transaction class_name=AddressAliasTransaction output_path=src/Transaction/AddressAliasTransaction.php",
+    "gen:tx:restrict:mosaic-global": "ts-node tools/promptgen.ts prompts/tx-mosaic-global-restriction.prompt.md class_name=MosaicGlobalRestrictionTransaction\\\\Transaction class_name=MosaicGlobalRestrictionTransaction output_path=src/Transaction/MosaicGlobalRestrictionTransaction.php",
+    "gen:tx:restrict:mosaic-address": "ts-node tools/promptgen.ts prompts/tx-mosaic-address-restriction.prompt.md class_name=MosaicAddressRestrictionTransaction\\\\Transaction class_name=MosaicAddressRestrictionTransaction output_path=src/Transaction/MosaicAddressRestrictionTransaction.php",
+    "gen:tx:secret:lock": "ts-node tools/promptgen.ts prompts/tx-secret-lock.prompt.md class_name=SecretLockTransaction\\\\Transaction class_name=SecretLockTransaction output_path=src/Transaction/SecretLockTransaction.php",
+    "gen:tx:secret:proof": "ts-node tools/promptgen.ts prompts/tx-secret-proof.prompt.md class_name=SecretProofTransaction\\\\Transaction class_name=SecretProofTransaction output_path=src/Transaction/SecretProofTransaction.php",
+    "gen:tx:meta:account": "ts-node tools/promptgen.ts prompts/tx-account-metadata.prompt.md class_name=AccountMetadataTransaction\\\\Transaction class_name=AccountMetadataTransaction output_path=src/Transaction/AccountMetadataTransaction.php",
+    "gen:tx:meta:mosaic": "ts-node tools/promptgen.ts prompts/tx-mosaic-metadata.prompt.md class_name=MosaicMetadataTransaction\\\\Transaction class_name=MosaicMetadataTransaction output_path=src/Transaction/MosaicMetadataTransaction.php",
+    "gen:tx:meta:namespace": "ts-node tools/promptgen.ts prompts/tx-namespace-metadata.prompt.md class_name=NamespaceMetadataTransaction\\\\Transaction class_name=NamespaceMetadataTransaction output_path=src/Transaction/NamespaceMetadataTransaction.php"
   },
   "devDependencies": {
     "@types/mustache": "^4.2.6",
