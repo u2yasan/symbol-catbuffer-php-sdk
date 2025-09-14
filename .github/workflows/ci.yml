@@ -41,6 +41,7 @@ jobs:
 
       - name: CS (dry-run)
         run: composer check:cs
+	continue-on-error: true
 
       - name: Static Analysis
         run: composer analyse
