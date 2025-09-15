@@ -4,3 +4,5 @@
 /.php-cs-fixer.php export-ignore
 /phpstan.neon export-ignore
 /README-dev.md export-ignore
+/tools  export-ignore
+/prompts export-ignore
