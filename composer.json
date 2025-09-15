@@ -1,6 +1,6 @@
 {
-  "name": "symbol-blockchain-community/symbol-catbuffer-php-sdk",
-  "description": "Symbol catbuffer-based PHP SDK (PHP 8.3, PSR-12, strict_types, immutable).",
+  "name": "newecosym/symbol-php-sdk",
+  "description": "Symbol PHP SDK (PHP ^8.3).",
   "type": "library",
   "license": "MIT",
   "autoload": {
