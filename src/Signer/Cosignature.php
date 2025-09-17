@@ -7,12 +7,23 @@ use SymbolSdk\CryptoTypes\KeyPair;
 
 final class Cosignature
 {
-    /**
-     * @param string $aggregateHash 32B（親Aggregateのハッシュ）
-     * @return string 64B signature
-     */
-    public static function signAggregateHash(string $aggregateHash, KeyPair $kp): string
+    /** @param string $aggregateHashRaw 32B（親Aggregateのハッシュ raw） */
+    public static function signAggregateHash(string $aggregateHashRaw, KeyPair $kp): string
     {
-        return \SymbolSdk\Crypto\Ed25519\Signer::signWith($kp, $aggregateHash);
+        if (strlen($aggregateHashRaw) !== 32) {
+            throw new \InvalidArgumentException('aggregateHash must be 32 bytes');
+        }
+        return TransactionSigner::signBytes($aggregateHashRaw, $kp);
+    }
+
+    /** 送信用の簡易DTO（hex） */
+    public static function toDtoHex(string $aggregateHashRaw, KeyPair $kp): array
+    {
+        $sig = self::signAggregateHash($aggregateHashRaw, $kp);
+        return [
+            'parentHash'      => bin2hex($aggregateHashRaw),
+            'signature'       => bin2hex($sig),
+            'signerPublicKey' => $kp->publicKey()->toHex(),
+        ];
     }
 }

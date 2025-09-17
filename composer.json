@@ -34,7 +34,10 @@
     "test": "phpunit --colors=always",
     "fix:cs": "php-cs-fixer fix --ansi",
     "check:cs": "php-cs-fixer fix --dry-run --diff --ansi",
-    "ci": "composer validate --strict && composer check:cs && composer analyse && composer test"
+    "ci": "composer validate --strict && composer check:cs && composer analyse && composer test",
+    "sign:arb": "php -d detect_unicode=0 examples/sign_arbitrary.php",
+    "cosign": "php examples/cosignature.php",
+    "announce": "php examples/announce_payload.php"
   },
   "config": {
     "allow-plugins": {

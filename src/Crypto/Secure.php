@@ -1,4 +1,3 @@
-// src/Crypto/Secure.php
 <?php
 declare(strict_types=1);
 
@@ -7,7 +6,6 @@ namespace SymbolSdk\Crypto;
 final class Secure
 {
     public static function equals(string $a, string $b): bool {
-        // sodium_memcmp は ext-sodium 依存、無ければ hash_equals
         if (function_exists('sodium_memcmp') && strlen($a) === strlen($b)) {
             return \sodium_memcmp($a, $b) === 0;
         }
@@ -15,10 +13,12 @@ final class Secure
     }
 
     public static function memzero(string &$s): void {
+        $len = strlen($s);
         if (function_exists('sodium_memzero')) {
-            \sodium_memzero($s);
+            \sodium_memzero($s);         // ここで $s は NULL になる実装
+            $s = str_repeat("\x00", $len); // 新しいゼロ文字列を代入（API一貫性のため）
         } else {
-            $s = str_repeat("\x00", strlen($s));
+            $s = str_repeat("\x00", $len);
         }
     }
 }
