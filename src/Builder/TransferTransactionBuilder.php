@@ -3,33 +3,55 @@ declare(strict_types=1);
 
 namespace SymbolSdk\Builder;
 
+use SymbolSdk\CatbufferFacade\Transfer as TransferFacade;
+use SymbolSdk\CryptoTypes\KeyPair;
+
 final class TransferTransactionBuilder extends BaseBuilder
 {
-    private string $recipientAddress;   // 形式は後でユーティリティ化
-    private int $amount = 0;            // mosaic量（例）
-    private string $message = '';       // plaintext (UTF-8) 前提
+    private string $recipientAddress;   // raw24 bytes
+    private string $message = '';
+    /** @var array<int, array{id:int|string, amount:int|string}> */
+    private array $mosaics = [];
 
-    public function recipient(string $addr): static { $this->recipientAddress = $addr; return $this; }
-    public function amount(int $v): static { $this->amount = $v; return $this; }
+    private string $generationHashHex = '';
+    private ?KeyPair $kp = null;
+
+    /** 署名で使った未署名ペイロードをキャッシュ（同一バッファへ埋め戻すため） */
+    private ?string $unsignedCache = null;
+
+    public function recipient(string $addrRaw24): static { $this->recipientAddress = $addrRaw24; return $this; }
     public function message(string $m): static { $this->message = $m; return $this; }
+    public function mosaics(array $list): static { $this->mosaics = $list; return $this; }
+    public function generationHash(string $hex32): static { $this->generationHashHex = $hex32; return $this; }
+    public function keyPair(KeyPair $kp): static { $this->kp = $kp; return $this; }
 
+    /** bytesToSign を作る（未署名ペイロードをキャッシュ） */
     protected function serializeForSigning(): string
     {
-        // TODO: catbuffer 実装に接続する。ここでは仮のワイヤ形式を置く。
-        // 例: [header..][networkType(4)][deadline(8)][maxFee(8)][recipient(24)][amount(8)][msgLen(2)][msg...]
-        // ※ 正式実装では catbuffer の定義に沿って serialize() を呼ぶだけにする。
-        return \SymbolSdk\Catbuffer\Transfer::serializeForSigning(
-            networkType: $this->networkType,
-            deadline: $this->deadline,
-            maxFee: $this->maxFee,
-            recipient: $this->recipientAddress,
-            amount: $this->amount,
-            message: $this->message
+        $this->unsignedCache = TransferFacade::fromParamsWithMosaics(
+            networkType:    $this->networkType,
+            deadline:       $this->deadline,
+            maxFee:         $this->maxFee,
+            recipientRaw24: $this->recipientAddress,
+            messagePlain:   $this->message,
+            mosaics:        $this->mosaics
         );
+        return TransferFacade::bytesToSign($this->unsignedCache, $this->generationHashHex);
     }
 
+    /** 署名をキャッシュ済み未署名ペイロードへ in-place 埋め戻す */
     protected function embedSignature(string $signature): string
     {
-        return \SymbolSdk\Catbuffer\Transfer::embedSignature($signature);
+        if (null === $this->unsignedCache) {
+            throw new \LogicException('serializeForSigning() was not called before embedSignature()');
+        }
+        if (!$this->kp) {
+            throw new \LogicException('keyPair() must be set before signWith()');
+        }
+        return TransferFacade::embedSignature(
+            $this->unsignedCache,
+            $signature,
+            $this->kp->publicKey()
+        );
     }
 }

@@ -1,0 +1,18 @@
+{
+  "name": "TransferTransaction",
+  "version": 1,
+  "fields": [
+    { "name": "size",            "type": "u32le" },
+    { "name": "reserved1",       "type": "u32le" },
+    { "name": "signature",       "type": "bytes(64)" },
+    { "name": "signerPublicKey", "type": "bytes(32)" },
+    { "name": "version",         "type": "u8" },
+    { "name": "network",         "type": "u8" },
+    { "name": "type",            "type": "u16le" },
+    { "name": "maxFee",          "type": "u64le" },
+    { "name": "deadline",        "type": "u64le" },
+    { "name": "recipientRaw24",  "type": "bytes(24)" },
+    { "name": "messageSize",     "type": "u16le" },
+    { "name": "message",         "type": "bytes(lenField=messageSize)" }
+  ]
+}
