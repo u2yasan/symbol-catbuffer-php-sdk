@@ -1,14 +1,14 @@
 id: tx-transfer
 version: 1.0.0
 purpose: "TransferTransaction の PHP 実装（共通ヘッダ128B対応／message / mosaics 拡張互換・JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "TransferTransaction"
-output_path: "src/Transaction/TransferTransaction.php"
+output_path: "src/Transactions/TransferTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/transfer/transfer.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

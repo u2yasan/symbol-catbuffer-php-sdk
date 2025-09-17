@@ -1,14 +1,14 @@
 id: tx-address-alias
 version: 1.0.1
 purpose: "AddressAliasTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠／phpstan clean）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "AddressAliasTransaction"
-output_path: "src/Transaction/AddressAliasTransaction.php"
+output_path: "src/Transactions/AddressAliasTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/namespace/address_alias.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

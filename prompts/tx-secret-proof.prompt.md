@@ -1,14 +1,14 @@
 id: tx-secret-proof
 version: 1.0.0
 purpose: "SecretProofTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "SecretProofTransaction"
-output_path: "src/Transaction/SecretProofTransaction.php"
+output_path: "src/Transactions/SecretProofTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/lock/secret_proof.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

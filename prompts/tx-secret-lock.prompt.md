@@ -1,14 +1,14 @@
 id: tx-secret-lock
 version: 1.0.0
 purpose: "SecretLockTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "SecretLockTransaction"
-output_path: "src/Transaction/SecretLockTransaction.php"
+output_path: "src/Transactions/SecretLockTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/lock/secret_lock.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

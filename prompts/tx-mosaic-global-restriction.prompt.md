@@ -1,14 +1,14 @@
 id: tx-mosaic-global-restriction
 version: 1.1.0
 purpose: "MosaicGlobalRestrictionTransaction の PHP 実装（共通ヘッダ128B準拠／strict rulesでの静的解析通過）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "MosaicGlobalRestrictionTransaction"
-output_path: "src/Transaction/MosaicGlobalRestrictionTransaction.php"
+output_path: "src/Transactions/MosaicGlobalRestrictionTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/restriction/mosaic_global_restriction.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

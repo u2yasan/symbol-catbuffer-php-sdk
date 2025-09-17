@@ -1,13 +1,13 @@
 id: tx-aggregate
 version: 1.0.0
 purpose: "AggregateCompleteTransaction の PHP 実装（共通ヘッダ128B対応／cosignatures あり／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 # class_name と output_path はコマンド引数で与える
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/aggregate/aggregate.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

@@ -1,24 +1,18 @@
----
 id: tx-mosaic-definition
 version: 1.0.0
 purpose: "MosaicDefinitionTransaction のPHP実装"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "MosaicDefinitionTransaction"
-output_path: "src/Transaction/MosaicDefinitionTransaction.php"
+output_path: "src/Transactions/MosaicDefinitionTransaction.php"
 references:
   catbuffer: |
-    # BODY（例）
-    # - nonce: uint32
-    # - mosaicId: uint64
-    # - flags: uint8 (bitset)
-    # - divisibility: uint8
-    # - duration: uint64
+    https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/mosaic/mosaic_definition.cats
   parity_with: ["sdk/javascript", "sdk/python"]
 dependencies:
-  header: "SymbolSdk\\Transaction\\TransactionHeader"
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  header: "SymbolSdk\\Transactions\\TransactionHeader"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
   io:     "SymbolSdk\\Io\\BinaryReader, SymbolSdk\\Io\\BinaryWriter"
-  models: "SymbolSdk\\Model\\MosaicId, SymbolSdk\\Model\\Amount"
+  models: "SymbolSdk\\Models\\MosaicId, SymbolSdk\\Models\\Amount"
 ---
 
 {{> common-principles.md }}

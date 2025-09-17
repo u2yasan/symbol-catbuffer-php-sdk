@@ -2,16 +2,16 @@
 id: tx-generic
 version: 1.0.0
 purpose: "catbufferトランザクション定義からPHP実装（ヘッダ＋ボディ）を生成"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "REPLACE_ME"            # 例: TransferTransaction
-output_path: "src/Transaction/REPLACE_ME.php"
+output_path: "src/Transactions/REPLACE_ME.php"
 references:
   catbuffer: |
     # ここに該当Txのcatbufferスキーマをそのまま貼る（YAML/BNF/表でも可）
   parity_with: ["sdk/javascript", "sdk/python"]
 dependencies:
-  header: "SymbolSdk\\Transaction\\TransactionHeader"
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  header: "SymbolSdk\\Transactions\\TransactionHeader"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
   io:     "SymbolSdk\\Io\\BinaryReader, SymbolSdk\\Io\\BinaryWriter"
   models: "SymbolSdk\\Model\\*（MosaicId, Amount など必要に応じて）"
 ---

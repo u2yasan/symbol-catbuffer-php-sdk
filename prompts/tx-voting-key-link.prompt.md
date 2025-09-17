@@ -1,14 +1,14 @@
 id: tx-voting-key-link
 version: 1.0.2
 purpose: "VotingKeyLinkTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "VotingKeyLinkTransaction"
-output_path: "src/Transaction/VotingKeyLinkTransaction.php"
+output_path: "src/Transactions/VotingKeyLinkTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/coresystem/voting_key_link.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

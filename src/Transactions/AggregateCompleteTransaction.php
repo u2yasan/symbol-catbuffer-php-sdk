@@ -2,19 +2,23 @@
 
 declare(strict_types=1);
 
-namespace SymbolSdk\Transaction;
+namespace SymbolSdk\Transactions;
 
 /**
- * AggregateBondedTransaction
+ * AggregateCompleteTransaction
  * - 共通ヘッダ128B対応
  * - cosignatures 付き.
+ *
+ * 注意:
+ *  - 親 AbstractTransaction の readU16LEAt / readU32LEAt / readU64LEDecAt / u64LE を再定義しない
+ *  - 型宣言済み引数に対する is_string / is_int チェックは行わない（PHPStan 用）
  */
-class AggregateBondedTransaction extends AbstractTransaction
+final class AggregateCompleteTransaction extends AbstractTransaction
 {
     /** @var string 署名者公開鍵（32B） */
     private string $signerPublicKey;
 
-    /** @var int バージョン */
+    /** @var int バージョン（0..255想定） */
     private int $ver;
 
     /** @var string ペイロードハッシュ（32B） */
@@ -43,6 +47,7 @@ class AggregateBondedTransaction extends AbstractTransaction
         string $maxFeeDec,
         string $deadlineDec,
     ) {
+        // 値域チェックのみ（型は宣言で保証）
         if (32 !== \strlen($signerPublicKey)) {
             throw new \InvalidArgumentException('signerPublicKey must be 32 bytes');
         }
@@ -59,8 +64,7 @@ class AggregateBondedTransaction extends AbstractTransaction
             throw new \InvalidArgumentException('merkleHash must be 32 bytes');
         }
 
-        // $cosignatures は @param list<array{signerPublicKey:string, signature:string}> で受領済み。
-        // 実行時は長さのみ検証し、list と shape は PHPDoc/静的解析に委ねる。
+        // cosignatures は list<shape> 前提。実行時は長さのみ検証。
         /** @var list<array{signerPublicKey:string, signature:string}> $normalized */
         $normalized = [];
 
@@ -95,6 +99,12 @@ class AggregateBondedTransaction extends AbstractTransaction
         $h = self::parseHeader($binary);
         $offset = $h['offset'];
 
+        $len = \strlen($binary);
+
+        if ($len < $offset + 32 + 1 + 32 + 32 + 4) {
+            throw new \RuntimeException('Unexpected EOF while reading AggregateCompleteTransaction');
+        }
+
         $signerPublicKey = \substr($binary, $offset, 32);
 
         if (32 !== \strlen($signerPublicKey)) {
@@ -127,17 +137,20 @@ class AggregateBondedTransaction extends AbstractTransaction
         $cosignatures = [];
 
         for ($i = 0; $i < $cosigCount; ++$i) {
+            if ($len < $offset + 32 + 64) {
+                throw new \RuntimeException("Unexpected EOF in cosignature[$i]");
+            }
             $pub = \substr($binary, $offset, 32);
 
             if (32 !== \strlen($pub)) {
-                throw new \RuntimeException('Unexpected EOF in cosignature pubkey');
+                throw new \RuntimeException("Unexpected EOF in cosignature[$i] pubkey");
             }
             $offset += 32;
 
             $sig = \substr($binary, $offset, 64);
 
             if (64 !== \strlen($sig)) {
-                throw new \RuntimeException('Unexpected EOF in cosignature signature');
+                throw new \RuntimeException("Unexpected EOF in cosignature[$i] signature");
             }
             $offset += 64;
 
@@ -180,4 +193,7 @@ class AggregateBondedTransaction extends AbstractTransaction
 
         return $out;
     }
+
+    // 親の readU16LEAt / readU32LEAt / readU64LEDecAt / u64LE を使用する。
+    // このクラスでの再定義は行わない（可視性違反や mixed 返り値の原因になる）。
 }

@@ -1,14 +1,14 @@
 id: tx-mosaic-supply-change
 version: 1.0.0
 purpose: "MosaicSupplyChangeTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "MosaicSupplyChangeTransaction"
-output_path: "src/Transaction/MosaicSupplyChangeTransaction.php"
+output_path: "src/Transactions/MosaicSupplyChangeTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/mosaic/mosaic_supply_change.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

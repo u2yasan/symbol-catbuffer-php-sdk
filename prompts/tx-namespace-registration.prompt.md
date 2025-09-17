@@ -1,14 +1,14 @@
 id: tx-namespace-registration
 version: 1.0.0
 purpose: "NamespaceRegistrationTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "NamespaceRegistrationTransaction"
-output_path: "src/Transaction/NamespaceRegistrationTransaction.php"
+output_path: "src/Transactions/NamespaceRegistrationTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/namespace/namespace_registration.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

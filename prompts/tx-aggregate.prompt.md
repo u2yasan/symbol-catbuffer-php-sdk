@@ -2,9 +2,9 @@
 id: tx-aggregate
 version: 1.0.0
 purpose: "Aggregate{Complete|Bonded}Transaction のPHP実装"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "AggregateCompleteTransaction"     # or AggregateBondedTransaction
-output_path: "src/Transaction/AggregateCompleteTransaction.php"
+output_path: "src/Transactions/AggregateCompleteTransaction.php"
 references:
   catbuffer: |
     # BODY（例）
@@ -19,8 +19,8 @@ references:
     #   - version: uint8 (必要なら)
   parity_with: ["sdk/javascript", "sdk/python"]
 dependencies:
-  header: "SymbolSdk\\Transaction\\TransactionHeader"
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  header: "SymbolSdk\\Transactions\\TransactionHeader"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
   io:     "SymbolSdk\\Io\\BinaryReader, SymbolSdk\\Io\\BinaryWriter"
 ---
 

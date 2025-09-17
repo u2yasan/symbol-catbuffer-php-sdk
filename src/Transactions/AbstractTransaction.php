@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SymbolSdk\Transaction;
+namespace SymbolSdk\Transactions;
 
 /**
  * 共通トランザクション基底

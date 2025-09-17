@@ -1,14 +1,14 @@
 id: tx-mosaic-metadata
 version: 1.0.0
 purpose: "MosaicMetadataTransaction の PHP 実装（共通ヘッダ128B対応／cats準拠／vectors往復一致）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "MosaicMetadataTransaction"
-output_path: "src/Transaction/MosaicMetadataTransaction.php"
+output_path: "src/Transactions/MosaicMetadataTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/metadata/mosaic_metadata.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

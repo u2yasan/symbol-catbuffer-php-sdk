@@ -1,14 +1,14 @@
 id: tx-namespace-metadata
 version: 1.0.0
 purpose: "NamespaceMetadataTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "NamespaceMetadataTransaction"
-output_path: "src/Transaction/NamespaceMetadataTransaction.php"
+output_path: "src/Transactions/NamespaceMetadataTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/metadata/namespace_metadata.cats
 dependencies:
-  base: "SymbolSdk\\Transaction\\AbstractTransaction"
+  base: "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

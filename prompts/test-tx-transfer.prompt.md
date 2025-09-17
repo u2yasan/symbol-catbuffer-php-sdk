@@ -2,9 +2,9 @@
 id: test-tx-transfer
 version: 1.0.0
 purpose: "TransferTransaction のPHPUnitテスト生成（固定HEXベクタ）"
-namespace: "SymbolSdk\\Tests\\Transaction"
+namespace: "SymbolSdk\\Tests\\Transactions"
 class_name: "TransferTransactionTest"
-output_path: "tests/Transaction/TransferTransactionTest.php"
+output_path: "tests/Transactions/TransferTransactionTest.php"
 inputs:
   vectors:
     valid_min: "HEXを貼る"

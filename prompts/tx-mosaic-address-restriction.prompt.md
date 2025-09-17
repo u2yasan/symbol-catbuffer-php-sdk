@@ -1,14 +1,14 @@
 id: tx-mosaic-address-restriction
 version: 1.0.0
 purpose: "MosaicAddressRestrictionTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "MosaicAddressRestrictionTransaction"
-output_path: "src/Transaction/MosaicAddressRestrictionTransaction.php"
+output_path: "src/Transactions/MosaicAddressRestrictionTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/restriction/mosaic_address_restriction.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}
@@ -33,7 +33,7 @@ It must follow the **catbuffer transaction schema** and be consistent with exist
 
 ### Namespace
 ```php
-namespace SymbolSdk\\Transaction;
+namespace SymbolSdk\\Transactions;
 ```
 
 ### Class Declaration
@@ -149,4 +149,4 @@ All helper methods must maintain compatibility with `AbstractTransaction`.
 
 
 # Output
-Provide the **full implementation** of `src/Transaction/MosaicAddressRestrictionTransaction.php`.
+Provide the **full implementation** of `src/Transactions/MosaicAddressRestrictionTransaction.php`.

@@ -1,14 +1,14 @@
 id: tx-node-key-link
 version: 1.0.2
 purpose: "NodeKeyLinkTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "NodeKeyLinkTransaction"
-output_path: "src/Transaction/NodeKeyLinkTransaction.php"
+output_path: "src/Transactions/NodeKeyLinkTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/account_link/node_key_link.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

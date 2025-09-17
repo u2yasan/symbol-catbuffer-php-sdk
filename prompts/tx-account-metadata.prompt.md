@@ -1,14 +1,14 @@
 id: tx-account-metadata
 version: 1.0.1
 purpose: "AccountMetadataTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors 準拠／PHPStan 無警告方針）"
-namespace: "SymbolSdk\Transaction"
+namespace: "SymbolSdk\Transactions"
 class_name: "AccountMetadataTransaction"
-output_path: "src/Transaction/AccountMetadataTransaction.php"
+output_path: "src/Transactions/AccountMetadataTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/metadata/account_metadata.cats
 dependencies:
-  base:   "SymbolSdk\Transaction\AbstractTransaction"
+  base:   "SymbolSdk\Transactions\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

@@ -2,9 +2,9 @@
 id: model-mosaic-id
 version: 1.0.0
 purpose: "catbuffer MosaicId(u64) の PHP値オブジェクト生成"
-namespace: "SymbolSdk\\Model"
+namespace: "SymbolSdk\\Models"
 class_name: "MosaicId"
-output_path: "src/Model/MosaicId.php"
+output_path: "src/Models/MosaicId.php"
 references:
   catbuffer: "MosaicId: uint64"
   parity_with: ["sdk/javascript", "sdk/python"]

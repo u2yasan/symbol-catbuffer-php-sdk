@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace SymbolSdk\Transaction;
+namespace SymbolSdk\Transactions;
 
 final class AliasAction
 {

@@ -1,14 +1,14 @@
 id: tx-vrf-key-link
 version: 1.0.2
 purpose: "VrfKeyLinkTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "VrfKeyLinkTransaction"
-output_path: "src/Transaction/VrfKeyLinkTransaction.php"
+output_path: "src/Transactions/VrfKeyLinkTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/coresystem/vrf_key_link.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}

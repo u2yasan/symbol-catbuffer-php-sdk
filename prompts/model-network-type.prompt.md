@@ -1,9 +1,9 @@
 id: model-network-type
 version: 1.0.0
 purpose: "Symbol NetworkType enum の PHP値オブジェクト生成"
-namespace: "SymbolSdk\\Model"
+namespace: "SymbolSdk\\Models"
 class_name: "NetworkType"
-output_path: "src/Model/NetworkType.php"
+output_path: "src/Models/NetworkType.php"
 references:
   spec: "Symbol Catapult / SDK の NetworkType 定義"
   parity_with: ["sdk/javascript", "sdk/java", "sdk/python"]

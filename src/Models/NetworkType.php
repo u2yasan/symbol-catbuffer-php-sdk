@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace SymbolSdk\Model;
+namespace SymbolSdk\Models;
 
 enum NetworkType: int
 {

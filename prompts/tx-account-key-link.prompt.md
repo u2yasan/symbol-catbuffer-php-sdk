@@ -1,14 +1,14 @@
 id: tx-account-key-link
 version: 1.0.2
 purpose: "AccountKeyLinkTransaction の PHP 実装（共通ヘッダ128B対応／JSON vectors準拠）"
-namespace: "SymbolSdk\\Transaction"
+namespace: "SymbolSdk\\Transactions"
 class_name: "AccountKeyLinkTransaction"
-output_path: "src/Transaction/AccountKeyLinkTransaction.php"
+output_path: "src/Transactions/AccountKeyLinkTransaction.php"
 references:
   catbuffer: |
     https://github.com/symbol/symbol/blob/main/catbuffer/schemas/symbol/account_link/account_key_link.cats
 dependencies:
-  base:   "SymbolSdk\\Transaction\\AbstractTransaction"
+  base:   "SymbolSdk\\Transactions\\AbstractTransaction"
 
 ---
 {{> common-php-guardrails.md }}
