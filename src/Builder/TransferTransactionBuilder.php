@@ -28,22 +28,36 @@ final class TransferTransactionBuilder extends BaseBuilder
     /** bytesToSign を作る（未署名ペイロードをキャッシュ） */
     protected function serializeForSigning(): string
     {
+        if (!isset($this->networkType,$this->deadline,$this->maxFee,$this->recipientAddress,$this->generationHashHex)) {
+            throw new \LogicException('networkType, deadline, maxFee, recipient, generationHash が未設定です');
+        }
+        // 未署名(V3)のバイト列を作成してキャッシュ
         $this->unsignedCache = TransferFacade::fromParamsWithMosaics(
             networkType:    $this->networkType,
-            deadline:       $this->deadline,
+            deadlineMs:       $this->deadline,          // epochAdjustment基準の ms
             maxFee:         $this->maxFee,
-            recipientRaw24: $this->recipientAddress,
-            messagePlain:   $this->message,
-            mosaics:        $this->mosaics
+            recipientRaw24: $this->recipientAddress,  // 24B
+            messagePlain:   $this->message ?? '',
+            mosaics:        $this->mosaics ?? []
         );
+        // 安全ガード：null / 長さ不足
+        if (!is_string($this->unsignedCache) || strlen($this->unsignedCache) < 105) {
+            throw new \RuntimeException('unsigned payload was not generated correctly (null or too short)');
+        }
+        // ここで version=3 を検証（V3 固定方針）
+        $versionByte = ord($this->unsignedCache[104]);
+        if (3 !== $versionByte) {
+            throw new \LogicException('Transfer version must be 3 (got '.$versionByte.')');
+        }
+        
         return TransferFacade::bytesToSign($this->unsignedCache, $this->generationHashHex);
     }
 
     /** 署名をキャッシュ済み未署名ペイロードへ in-place 埋め戻す */
     protected function embedSignature(string $signature): string
     {
-        if (null === $this->unsignedCache) {
-            throw new \LogicException('serializeForSigning() was not called before embedSignature()');
+        if (!is_string($this->unsignedCache) || strlen($this->unsignedCache) < 105) {
+            throw new \LogicException('serializeForSigning() が先に呼ばれていません（unsignedCache 未設定）');
         }
         if (!$this->kp) {
             throw new \LogicException('keyPair() must be set before signWith()');

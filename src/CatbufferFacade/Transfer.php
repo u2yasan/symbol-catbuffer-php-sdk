@@ -3,172 +3,109 @@ declare(strict_types=1);
 
 namespace SymbolSdk\CatbufferFacade;
 
+use SymbolSdk\Catbuffer\TransferTransactionV3;
 use SymbolSdk\Catbuffer\TransferTransactionV1;
 use SymbolSdk\CryptoTypes\PublicKey;
-
-/**
- * Transfer トランザクションの直列化ヘルパ（MVP）
- * - message: 先頭0x00 + UTF-8本文
- * - mosaics: count(u8) + [id(u64le) amount(u64le)] * count
- * - size: serialize 後に実長を先頭4Bへ書き戻し
- */
-final class Transfer
-{
-    /** u64 → LE(8B) */
-    private static function packU64LE(int|string $v): string {
-        if (is_string($v) && ctype_xdigit($v)) {
-            $v = intval($v, 16);
-        } elseif (is_string($v)) {
-            $v = (int)$v;
-        }
-        $lo = $v & 0xFFFFFFFF;
-        $hi = ($v >> 32) & 0xFFFFFFFF;
-        return pack('V2', $lo, $hi);
-    }
-
-    /** message の直列化（Plain） */
-    private static function buildMessage(string $messagePlain): array {
-        $msg = "\x00" . $messagePlain;     // 0x00: Plain
-        $len = strlen($msg);               // u16le
-        return [$len, $msg];
-    }
-
-    /** mosaics の直列化 */
-    private static function buildMosaics(array $mosaics): string {
-        $count = count($mosaics);
-        if ($count > 255) {
-            throw new \InvalidArgumentException('too many mosaics (max 255)');
-        }
-        $out = pack('C', $count);
-        foreach ($mosaics as $i => $m) {
-            if (!isset($m['id'], $m['amount'])) {
-                throw new \InvalidArgumentException("mosaic[$i] must have id, amount");
-            }
-            $out .= self::packU64LE($m['id']);
-            $out .= self::packU64LE($m['amount']);
-        }
-        return $out;
-    }
-
-    // 直前までの内容はそのまま。fromParamsWithMosaics だけ差し替え
+use SymbolSdk\Util\Serializer;
+final class Transfer {
+    /** 生成（V3固定） */
     public static function fromParamsWithMosaics(
-        int $networkType,
-        int $deadline,
-        int $maxFee,
-        string $recipientRaw24,
-        string $messagePlain,
-        array $mosaics
+        int $networkType, int $deadlineMs, int $maxFee,
+        string $recipientRaw24, string $messagePlain, array $mosaics
     ): string {
         if (strlen($recipientRaw24) !== 24) {
             throw new \InvalidArgumentException('recipientRaw24 must be 24 bytes');
         }
-
-        // message（Plain: 先頭 0x00）
+        // message: Plain = 0x00 + text
         $messageBytes = "\x00" . $messagePlain;
         $messageSize  = strlen($messageBytes);
 
-        // mosaics 構築（id昇順に並べる）
-        usort($mosaics, fn($a,$b) => (int)$a['id'] <=> (int)$b['id']);
+        // mosaics: id昇順
+        usort($mosaics, fn($a,$b)=> (int)$a['id'] <=> (int)$b['id']);
         $mosaicsCount = count($mosaics);
-        if ($mosaicsCount > 255) {
-            throw new \InvalidArgumentException('too many mosaics (max 255)');
-        }
-        $mosaicsBytes = pack('C', $mosaicsCount);
-        foreach ($mosaics as $i => $m) {
-            if (!isset($m['id'], $m['amount'])) {
-                throw new \InvalidArgumentException("mosaic[$i] must have id, amount");
-            }
-            $id = (int)$m['id'];
-            $amt= (int)$m['amount'];
-            $mosaicsBytes .= pack('V2', $id & 0xFFFFFFFF, ($id >> 32) & 0xFFFFFFFF);
-            $mosaicsBytes .= pack('V2', $amt & 0xFFFFFFFF, ($amt >> 32) & 0xFFFFFFFF);
-        }
+        if ($mosaicsCount > 255) throw new \InvalidArgumentException('too many mosaics');
 
-        // ★ ここがポイント：messageSize → mosaicsCount → message の順でシリアライズ
-        $tx = new TransferTransactionV1(
-            TransferTransactionV1::SIZE,    // 仮サイズ（後で上書き）
+        $tx = new TransferTransactionV3(
+            TransferTransactionV3::SIZE,
             0,
             str_repeat("\x00", 64),
             str_repeat("\x00", 32),
-            1,
+            3, // version
             $networkType,
             0x4154,
             $maxFee,
-            $deadline,
+            $deadlineMs,
             $recipientRaw24,
             $messageSize,
-            $mosaicsCount,                  // ★ 追加
+            $mosaicsCount,
             $messageBytes
         );
 
-        // まず固定部＋message まで
         $bin = $tx->serialize();
 
-        // 末尾に mosaics 配列を追加（count＋entries）
-        $bin .= substr($mosaicsBytes, 0);   // すでに count 先頭につけた
+        // mosaics entries を末尾に連結（count は連結しない）
+        foreach ($mosaics as $m) {
+            if (!array_key_exists('id', $m))     throw new \InvalidArgumentException('mosaic id missing');
+            if (!array_key_exists('amount', $m)) throw new \InvalidArgumentException('mosaic amount missing');
 
-        // size を実長へ
+            // ← これで HEX / hi-lo / int どれでもOK
+            $bin .= Serializer::u64le_from_any($m['id']);
+
+            // amount も共通経路に
+            $bin .= Serializer::u64le_from_amount($m['amount']);
+        }
+
+        // 先頭 size 上書き
         $total = strlen($bin);
-        $bin   = pack('V', $total) . substr($bin, 4);
+        $bin = pack('V', $total) . substr($bin, 4);
         return $bin;
     }
 
-    /** 署名対象：signature / signer を 0 埋め & generationHash(32B) を前置 */
-    public static function bytesToSign(string $unsignedPayload, string $generationHashHex): string
-    {
-        $p = $unsignedPayload;
-
-        $sigOff = TransferTransactionV1::SIGNATURE_OFFSET; // 8
-        $p = substr($p, 0, $sigOff)
-           . str_repeat("\x00", TransferTransactionV1::SIGNATURE_SIZE)
-           . substr($p, $sigOff + TransferTransactionV1::SIGNATURE_SIZE);
-
-        $signerOff = TransferTransactionV1::SIGNER_OFFSET; // 72
-        $p = substr($p, 0, $signerOff)
-           . str_repeat("\x00", TransferTransactionV1::SIGNER_SIZE)
-           . substr($p, $signerOff + TransferTransactionV1::SIGNER_SIZE);
-
-        return (string) hex2bin($generationHashHex) . $p;
+    /** 読み取り（V1/V3 自動判別） */
+    public static function parse(string $payload): TransferTransactionV1|TransferTransactionV3 {
+        $version = ord($payload[104]);
+        if (3 === $version) {
+            // V3 の固定部だけ読む簡易ラッパ（完全な parse が必要なら別途実装）
+            $off = 0;
+            $size = unpack('V', substr($payload, $off, 4))[1]; $off+=4;
+            $reserved = unpack('V', substr($payload, $off, 4))[1]; $off+=4;
+            $sig = substr($payload, $off, 64); $off+=64;
+            $signer = substr($payload, $off, 32); $off+=32;
+            $ver = ord($payload[$off++]);
+            $net = ord($payload[$off++]);
+            $type = unpack('v', substr($payload, $off, 2))[1]; $off+=2;
+            $feeLoHi = unpack('V2', substr($payload, $off, 8)); $off+=8;
+            $fee = ($feeLoHi[2] << 32) | $feeLoHi[1];
+            $dlLoHi = unpack('V2', substr($payload, $off, 8)); $off+=8;
+            $deadline = ($dlLoHi[2] << 32) | $dlLoHi[1];
+            $recipient = substr($payload, $off, 24); $off+=24;
+            $msgSize = unpack('v', substr($payload, $off, 2))[1]; $off+=2;
+            $mCount = ord($payload[$off++]);
+            $message = substr($payload, $off, $msgSize); $off += $msgSize;
+            return new TransferTransactionV3($size,$reserved,$sig,$signer,$ver,$net,$type,$fee,$deadline,$recipient,$msgSize,$mCount,$message);
+        }
+        // それ以外は V1 と見なして読む（serialize は提供しない＝作成禁止）
+        return TransferTransactionV1::fromBytes($payload);
     }
 
-    public static function embedSignature(string $unsignedPayload, string $signature64, PublicKey $pk): string
-    {
-        // --- 1) 事前バリデーション ---
-        if (strlen($signature64) !== 64) {
-            throw new \InvalidArgumentException('signature must be 64 bytes, got '.strlen($signature64));
-        }
-        $pkBytes = $pk->bytes();
-        if (strlen($pkBytes) !== 32) {
-            throw new \InvalidArgumentException('public key must be 32 bytes, got '.strlen($pkBytes));
-        }
-        $len = strlen($unsignedPayload);
-        $sigOff = \SymbolSdk\Catbuffer\TransferTransactionV1::SIGNATURE_OFFSET; // 8
-        $signerOff = \SymbolSdk\Catbuffer\TransferTransactionV1::SIGNER_OFFSET; // 72
-        if ($len < $signerOff + 32) {
-            throw new \InvalidArgumentException("payload too short: $len bytes");
-        }
+    /** 署名対象（verifiable data 以降 + gen hash プレフィックス） */
+    public static function bytesToSign(string $unsignedPayload, string $genHashHex): string {
+        $gen = hex2bin($genHashHex);
+        return $gen . substr($unsignedPayload, 104); // 104=verifiable data start
+    }
 
-        // --- 2) in-place 置換（長さ固定） ---
-        // helper: 部分上書き（長さ厳密）
-        $overwrite = static function (string $buf, int $off, string $data): string {
-            return substr($buf, 0, $off) . $data . substr($buf, $off + strlen($data));
-        };
+    /** 署名と signer をオフセットに in-place で埋め戻し */
+    public static function embedSignature(string $unsignedPayload, string $signature64, PublicKey $pk): string {
+        if (strlen($signature64) !== 64) throw new \InvalidArgumentException('sig must be 64B');
+        $pkBytes = $pk->bytes(); if (strlen($pkBytes)!==32) throw new \InvalidArgumentException('pk must be 32B');
 
-        $p = $unsignedPayload;
-        // 先に signature（64B）を所定位置へ
-        $p = $overwrite($p, $sigOff, $signature64);
-        // 次に signerPublicKey（32B）を所定位置へ
-        $p = $overwrite($p, $signerOff, $pkBytes);
+        $sigOff = 8;  $signerOff = 72;
+        $p = substr($unsignedPayload, 0, $sigOff) . $signature64 . substr($unsignedPayload, $sigOff + 64);
+        $p = substr($p, 0, $signerOff) . $pkBytes . substr($p, $signerOff + 32);
 
-        // --- 3) 直後に自己検証（ゼロでないこと／一致すること）---
-        $postSig   = substr($p, $sigOff, 64);
-        $postPk    = substr($p, $signerOff, 32);
-        if ($postSig !== $signature64) {
-            throw new \RuntimeException('embedSignature failed: signature not written correctly');
-        }
-        if ($postPk !== $pkBytes) {
-            throw new \RuntimeException('embedSignature failed: public key not written correctly');
-        }
+        // 簡易検証
+        if (substr($p, $sigOff, 64) !== $signature64) throw new \RuntimeException('sig not written');
+        if (substr($p, $signerOff, 32) !== $pkBytes) throw new \RuntimeException('pk not written');
         return $p;
     }
 }

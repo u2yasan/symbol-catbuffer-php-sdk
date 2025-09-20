@@ -25,14 +25,16 @@ $deadlineMs = ((time() - $epoch) + 2 * 60 * 60) * 1000;
 // === KeyPair 準備 ===
 $kp = KeyPair::fromPrivateKey(PrivateKey::fromHex($skHex));
 
+$currencyHex = getenv('CURRENCY_HEX'); // 0x72C0212E67A08BCE を数値に
+$amount     = 1000000; // 1 XYM 相当（divisibility=6 前提、最低送金量は任意）
 // === Builder ===
 $b = (new TransferTransactionBuilder())
     ->networkType($net)
     ->deadline($deadlineMs)              // ★ ここが重要
-    ->maxFee(200000)
+    ->maxFee(500000)
     ->recipient((string)hex2bin($raw24))
     ->message("hello symbol")
-    ->mosaics([['id' => 0x6BED913FA20223F8, 'amount' => 1000000]])
+    ->mosaics([['id' => $currencyHex, 'amount' => $amount]])
     ->generationHash($genHash)
     ->keyPair($kp);
 
@@ -40,4 +42,4 @@ $b = (new TransferTransactionBuilder())
 $signed = $b->signWith($kp);
 
 echo 'payloadHex=', bin2hex($signed), PHP_EOL;
-echo 'hash=', bin2hex(TxHash::sha3_256_of_payload($signed)), PHP_EOL;
+echo 'hash=', TxHash::sha3_256_hex($signed, $genHash), PHP_EOL;
